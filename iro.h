@@ -141,6 +141,32 @@ namespace iro {
     };
 
 
+    class effect_string {
+        std::string str_;
+        std::array<bool, number_of_effect_types> effects_active_at_end_;
+
+    public:
+        template<typename T, std::enable_if_t<(!std::is_same<T, effect_string>::value), bool> = true>
+        effect_string& operator<<(T& arg) {
+            str_ += arg;
+        }
+        effect_string& operator<<(const effect_string& arg);
+
+        template<typename T, std::enable_if_t<(!std::is_same<T, effect_string>::value), bool> = true>
+        effect_string& operator+=(T& arg) {
+            str_ += arg;
+        }
+        effect_string& operator+=(const effect_string& arg);
+
+        template<typename T, std::enable_if_t<(!std::is_same<T, effect_string>::value), bool> = true>
+        effect_string operator+(T& arg) {
+            auto ret = *this;
+            ret += arg;
+            return ret;
+        }
+    };
+
+
     namespace detail {
         void push_effect(std::ostream& stream, effect_type type, const char* code);
         void pop_effect(std::ostream& stream, effect_type type);
@@ -179,7 +205,6 @@ namespace iro {
 
     persist operator<<(std::ostream& stream, const effect& e);
     persist operator<<(std::ostream& stream, const effect_set& e);
-
 
     #ifdef IRO_IMPL
         effect::effect(const char* code, effect_type type) noexcept : code_(code), type_(type) {}
@@ -230,6 +255,15 @@ namespace iro {
         effect_set&& effect_set::operator|=(const effect_set& rhs)&& {
             return std::move(*this |= rhs);
         }
+
+
+        effect_string& effect_string::operator<<(const effect_string& arg) {
+            str_ += arg.str_;
+            effects_active_at_end_ = arg.effects_active_at_end_;
+
+            return *this;
+        }
+
 
         persist::persist() {
             /*for(unsigned i = 0; i < effects_.type_to_code_.size(); ++i) {
@@ -318,7 +352,6 @@ namespace iro {
                 }
             }
         }
-
 
         namespace detail {
             effect create(const char* code, effect_type type) noexcept {
