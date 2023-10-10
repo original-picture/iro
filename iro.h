@@ -4,7 +4,8 @@
 #include <stack>
 #include <array>
 #include <ostream>
-
+#include <sstream>
+#include <vector>
 
 namespace iro {
     enum effect_type {
@@ -125,11 +126,13 @@ namespace iro {
         std::array<const char*, number_of_effect_types> type_to_code_;
 
         friend class persist;
+        friend class effect_string;
 
     public:
         effect_set();
 
         effect_set(const effect& e);
+        effect_set(const effect& e, const effect& e2);
 
         effect_set   operator| (const effect& rhs) const;
         effect_set&  operator|=(const effect& rhs)&;
@@ -140,44 +143,25 @@ namespace iro {
         effect_set&& operator|=(const effect_set& rhs)&&;
     };
 
-
-    class effect_string {
-        std::string str_;
-        std::array<bool, number_of_effect_types> effects_active_at_end_;
-
-    public:
-        template<typename T, std::enable_if_t<(!std::is_same<T, effect_string>::value), bool> = true>
-        effect_string& operator<<(T& arg) {
-            str_ += arg;
-        }
-        effect_string& operator<<(const effect_string& arg);
-
-        template<typename T, std::enable_if_t<(!std::is_same<T, effect_string>::value), bool> = true>
-        effect_string& operator+=(T& arg) {
-            str_ += arg;
-        }
-        effect_string& operator+=(const effect_string& arg);
-
-        template<typename T, std::enable_if_t<(!std::is_same<T, effect_string>::value), bool> = true>
-        effect_string operator+(T& arg) {
-            auto ret = *this;
-            ret += arg;
-            return ret;
-        }
-    };
+    effect_set operator|(const effect& e1, const effect& e2);
 
 
     namespace detail {
         void push_effect(std::ostream& stream, effect_type type, const char* code);
         void pop_effect(std::ostream& stream, effect_type type);
         void set_top(std::ostream& stream, effect_type type, const char* code);
+        void reapply_top(std::ostream& stream, effect_type type);
     }
 
+
+    class effect_string;
 
     class persist {
         std::array<bool, number_of_effect_types> effects_used_;
         std::ostream* stream_ = nullptr;
 
+        friend persist operator<<(std::ostream&, const effect_string&);
+        friend persist&& operator<<(persist&, const effect_string&);
     public:
         persist();
 
@@ -193,7 +177,6 @@ namespace iro {
         persist&& operator<<(const effect& e);
         persist&& operator<<(const effect_set& es);
 
-
         template<typename T, std::enable_if_t<(!std::is_same<T, effect>::value) && (!std::is_same<T, effect_set>::value), bool> = true>
         persist&& operator<<(const T& arg) {
             *stream_ << arg;
@@ -206,25 +189,103 @@ namespace iro {
     persist operator<<(std::ostream& stream, const effect& e);
     persist operator<<(std::ostream& stream, const effect_set& e);
 
+
+    class effect_string {
+        struct string_and_effects {
+            std::string string;
+            std::array<bool, number_of_effect_types> active_effects_;
+
+            inline string_and_effects() {
+                active_effects_.fill(false);
+            }
+        };
+        std::vector<string_and_effects> strings_;
+
+        template<typename T, typename...Ts>
+        void init_(std::stringstream& stream, const T& arg) {
+            stream << arg;
+        }
+
+        template<typename T, typename...Ts, std::enable_if_t<(sizeof...(Ts) > 0), bool> = true>
+        void init_(std::stringstream& stream, const T& arg, const Ts&...args) {
+            stream << arg;
+        }
+
+        friend persist   operator<<(std::ostream&, const effect_string&);
+        friend persist&& operator<<(persist&,      const effect_string&);
+
+        string_and_effects& back_();
+        const string_and_effects& back_() const;
+
+    public:
+        template<typename T, typename...Ts>
+        effect_string(const effect_set& effects, const T& arg, const Ts&...args) {
+            std::stringstream stream; // probably really slow
+            for(unsigned i = 0; i < effects.type_to_code_.size(); ++i) {
+                const auto& e = effects.type_to_code_[i];
+                if(e) {
+                    strings_.resize(1);
+                    stream << e;
+                    strings_.back().active_effects_[i] = true;
+                }
+            }
+            init_(stream, arg, args...);
+            strings_.back().string = stream.str();
+        }
+
+        template<typename T, std::enable_if_t<(!std::is_same<T, effect_string>::value), bool> = true>
+        effect_string& operator<<(T& arg) {
+            back_() += arg;
+            return *this;
+        }
+        effect_string& operator<<(const effect_string& arg);
+        effect_string& operator<<(effect_string&& arg);
+
+        template<typename T, std::enable_if_t<(!std::is_same<T, effect_string>::value), bool> = true>
+        effect_string& operator+=(T& arg) {
+            back_() += arg;
+            return *this;
+        }
+        effect_string& operator+=(const effect_string& arg);
+        effect_string& operator+=(effect_string&& arg);
+
+        template<typename T>
+        effect_string operator+(T& arg) {
+            auto ret = *this;
+            ret += arg;
+            return ret;
+        }
+    };
+
+    persist   operator<<(std::ostream& os, const effect_string& es);
+    persist&& operator<<(persist& p,       const effect_string& es);
+
     #ifdef IRO_IMPL
         effect::effect(const char* code, effect_type type) noexcept : code_(code), type_(type) {}
 
-        
+
         effect_set::effect_set() {
             type_to_code_.fill(nullptr);
         }
 
         effect_set::effect_set(const effect& e) {
+            type_to_code_.fill(nullptr);
             type_to_code_[e.type_] = e.code_;
         }
-    
+
+        effect_set::effect_set(const effect& e1, const effect& e2) {
+            type_to_code_.fill(nullptr);
+            type_to_code_[e1.type_] = e1.code_;
+            type_to_code_[e2.type_] = e2.code_;
+        }
+
         effect_set effect_set::operator|(const effect& rhs) const {
             effect_set ret = *this;
             ret.type_to_code_[rhs.type_] = rhs.code_;
 
             return ret;
         }
-        
+
         effect_set& effect_set::operator|=(const effect& rhs)& {
             type_to_code_[rhs.type_] = rhs.code_;
 
@@ -256,17 +317,13 @@ namespace iro {
             return std::move(*this |= rhs);
         }
 
-
-        effect_string& effect_string::operator<<(const effect_string& arg) {
-            str_ += arg.str_;
-            effects_active_at_end_ = arg.effects_active_at_end_;
-
-            return *this;
+        effect_set operator|(const effect& e1, const effect& e2) {
+            return {e1, e2};
         }
 
 
         persist::persist() {
-            /*for(unsigned i = 0; i < effects_.type_to_code_.size(); ++i) {
+                /*for(unsigned i = 0; i < effects_.type_to_code_.size(); ++i) {
                 const auto& e = effects_.type_to_code_[i];
                 if(e) {
                     detail::push_effect()
@@ -353,6 +410,67 @@ namespace iro {
             }
         }
 
+
+        effect_string::string_and_effects& effect_string::back_() {
+            if(!strings_.size()) {
+                strings_.push_back({});
+            }
+            return strings_.back();
+        }
+
+        const effect_string::string_and_effects& effect_string::back_() const {
+            return strings_.back();
+        }
+
+        effect_string& effect_string::operator<<(const effect_string& arg) {
+            for(const auto& string : arg.strings_) {
+                strings_.push_back(string);
+            }
+
+            return *this;
+        }
+
+        effect_string& effect_string::operator<<(effect_string&& arg) {
+            for(auto& string : arg.strings_) {
+                strings_.push_back(std::move(string));
+            }
+
+            return *this;
+        }
+
+        effect_string& effect_string::operator+=(const effect_string& arg) {
+            return (*this << arg);
+        }
+
+        effect_string& effect_string::operator+=(effect_string&& arg) {
+            return (*this << std::move(arg));
+        }
+
+        persist&& operator<<(persist& p, const effect_string& es) {
+
+            for(const auto& string : es.strings_) {
+                p << string.string;
+
+                for(unsigned i = 0; i < string.active_effects_.size(); ++i) {
+                    if(string.active_effects_[i]) {
+                        detail::reapply_top(*p.stream_, static_cast<effect_type>(i));
+                    }
+                }
+            }
+
+            return std::move(p);
+        }
+
+        persist operator<<(std::ostream& os, const effect_string& es) {
+            persist ret;
+            ret.stream_ = &os;
+
+            ret << es;
+
+            return ret;
+        }
+
+
         namespace detail {
             effect create(const char* code, effect_type type) noexcept {
                 return {code, type};
@@ -360,7 +478,7 @@ namespace iro {
                                                                             // the code
             static std::array<std::unordered_map<std::ostream*, std::stack<const char*>>,
                               number_of_effect_types> effect_type_to_stream_to_effect_stack_;
-            
+
             static std::array<const char*, number_of_effect_types> effect_type_to_default_code_ = {"\x1b[39m",
                                                                                                    "\x1b[49m",
                                                                                                    "\x1b[22m",
@@ -390,6 +508,14 @@ namespace iro {
             void set_top(std::ostream& stream, effect_type type, const char* code) {
                 effect_type_to_stream_to_effect_stack_[type].at(&stream).top() = code;
                 stream << code;
+            }
+
+            void reapply_top(std::ostream& stream, effect_type type) {
+                auto& map = effect_type_to_stream_to_effect_stack_[type];
+                if(!map.count(&stream)) { // I'm using c++14, so .contains() isn't available :(
+                    map[&stream].push(effect_type_to_default_code_[type]);
+                }
+                stream << map.at(&stream).top();
             }
         }
     #endif

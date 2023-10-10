@@ -6,23 +6,24 @@
 using namespace iro;
 
 persist print_stuff() {
-    return std::cout << bright_blue << "blue in the function\n";
+    return std::cout << bright_blue << "ファンクションの中の青\n";
 }
 
 int main() {
-    std::cout << "normal\n";
+    std::cout << "普通\n";
     auto p0 = print_stuff();
-    std::cout << "blue\n";
+    std::cout << "青\n";
 
     p0 << bold;
     {
-        auto p1 = std::cout << bright_red << "red\n" << "red\n";
+        auto p1 = std::cout << bright_red << "赤\n";
         persist p2;
         {
-            p2 = std::cout << bright_green << "green\n";
+            p2 = std::cout << bright_green << effect_string(red, "now red ") << "緑\n";
         }
-        std::cout << "green\n";
+        std::cout << "緑\n";
     }
-    std::cout << "blue again\n";
+    std::cout << "また青\n";   
+
     return 0;
 }
