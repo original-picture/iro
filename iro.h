@@ -140,11 +140,13 @@ namespace iro {
         effect_set(const effect& e);
         effect_set(const effect& e, const effect& e2);
 
-        effect_set   operator| (const effect& rhs) const;
+        effect_set   operator| (const effect& rhs) const&;
+        effect_set&& operator| (const effect& rhs)&&;
         effect_set&  operator|=(const effect& rhs)&;
         effect_set&& operator|=(const effect& rhs)&&;
 
-        effect_set   operator| (const effect_set& rhs) const;
+        effect_set   operator| (const effect_set& rhs) const&;
+        effect_set&& operator| (const effect_set& rhs)&&;
         effect_set&  operator|=(const effect_set& rhs)&;
         effect_set&& operator|=(const effect_set& rhs)&&;
     };
@@ -155,6 +157,7 @@ namespace iro {
     namespace detail {
         unsigned push_effect(std::ostream& stream, effect_type type, const char* code);
         void pop_effect(std::ostream& stream, effect_type type);
+        void set(std::ostream& stream, effect_type type, unsigned index, const char* code);
         void set_top(std::ostream& stream, effect_type type, const char* code);
         void reapply_top(std::ostream& stream, effect_type type);
     }
@@ -163,7 +166,7 @@ namespace iro {
     class effect_string;
 
     class persist {
-        std::array<bool, number_of_effect_types> effects_used_;
+        std::array<unsigned, number_of_effect_types> effect_locations_in_stack_;
         std::ostream* stream_ = nullptr;
 
         friend persist operator<<(std::ostream&, const effect_string&);
@@ -286,11 +289,15 @@ namespace iro {
             type_to_code_[e2.type_] = e2.code_;
         }
 
-        effect_set effect_set::operator|(const effect& rhs) const {
+        effect_set effect_set::operator|(const effect& rhs) const& {
             effect_set ret = *this;
             ret.type_to_code_[rhs.type_] = rhs.code_;
 
             return ret;
+        }
+
+        effect_set&& effect_set::operator|(const effect& rhs)&& {
+            return std::move(*this |= rhs);
         }
 
         effect_set& effect_set::operator|=(const effect& rhs)& {
@@ -303,10 +310,14 @@ namespace iro {
             return std::move(*this|=rhs);
         }
 
-        effect_set effect_set::operator|(const effect_set& rhs) const {
+        effect_set effect_set::operator|(const effect_set& rhs) const& {
             effect_set ret;
             ret |= rhs;
             return ret;
+        }
+
+        effect_set&& effect_set::operator|(const effect_set& rhs)&& {
+            return std::move(*this |= rhs);
         }
 
         effect_set& effect_set::operator|=(const effect_set& rhs)& {
@@ -337,24 +348,22 @@ namespace iro {
                 }
             }*/
 
-            effects_used_.fill(false);
+            effect_locations_in_stack_.fill(0);
         }
 
         persist::persist(std::ostream& os, const effect& e) : stream_(&os) {
-            effects_used_.fill(false);
+            effect_locations_in_stack_.fill(0);
 
-            effects_used_[e.type_] = true;
-            detail::push_effect(os, e.type_, e.code_);
+            effect_locations_in_stack_[e.type_] = detail::push_effect(os, e.type_, e.code_);
         }
 
         persist::persist(std::ostream& os, const effect_set& e) : stream_(&os) {
-            effects_used_.fill(false);
+            effect_locations_in_stack_.fill(0);
 
             for(unsigned i = 0; i < e.type_to_code_.size(); ++i) {
                 auto& el =  e.type_to_code_[i];
                 if(el) {
-                    effects_used_[i] = true;
-                    detail::push_effect(os, static_cast<effect_type>(i), el);
+                    effect_locations_in_stack_[i] = detail::push_effect(os, static_cast<effect_type>(i), el);
                 }
             }
         }
@@ -362,24 +371,24 @@ namespace iro {
         persist::persist(persist&& other) {
             stream_ = other.stream_;
 
-            effects_used_ = other.effects_used_;
-            other.effects_used_ = {};
+            effect_locations_in_stack_ = other.effect_locations_in_stack_;
+            other.effect_locations_in_stack_.fill(0);
         }
         persist& persist::operator=(persist&& rhs) {
             stream_ = rhs.stream_;
 
-            std::swap(effects_used_, rhs.effects_used_);
+            std::swap(effect_locations_in_stack_, rhs.effect_locations_in_stack_);
 
             return *this;
         }
 
         persist&& persist::operator<<(const effect& e) {
-            if(effects_used_[e.type_]) {
+            if(effect_locations_in_stack_[e.type_]) {
                 detail::set_top(*stream_, e.type_, e.code_);
             }
             else {
-                detail::push_effect(*stream_, e.type_, e.code_);
-                effects_used_[e.type_] = true;
+
+                effect_locations_in_stack_[e.type_] = detail::push_effect(*stream_, e.type_, e.code_);
             }
             return std::move(*this);
         }
@@ -389,12 +398,11 @@ namespace iro {
                 auto type = static_cast<effect_type>(i);
                 auto code = es.type_to_code_[i];
 
-                if(effects_used_[type]) {
+                if(effect_locations_in_stack_[type]) {
                     detail::set_top(*stream_, type, code);
                 }
                 else {
-                    detail::push_effect(*stream_, type, code);
-                    effects_used_[type] = true;
+                    effect_locations_in_stack_[type] = detail::push_effect(*stream_, type, code);
                 }
             }
 
@@ -410,8 +418,8 @@ namespace iro {
         }
 
         persist::~persist() {
-            for(unsigned i = 0; i < effects_used_.size(); ++i) {
-                if(effects_used_[i]) {
+            for(unsigned i = 0; i < effect_locations_in_stack_.size(); ++i) {
+                if(effect_locations_in_stack_[i]) {
                     detail::pop_effect(*stream_, static_cast<effect_type>(i));
                 }
             }
@@ -585,6 +593,10 @@ namespace iro {
                 /*if(stack.size() == 1) {
                     map.erase(&stream);
                 }*/
+            }
+
+            void set(std::ostream& stream, effect_type type, unsigned index, const char* code) {
+                effect_type_to_stream_to_effect_stack_[type].at(&stream)[index] = code;
             }
 
             void set_top(std::ostream& stream, effect_type type, const char* code) {
