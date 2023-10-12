@@ -7,6 +7,12 @@
 #include <sstream>
 #include <vector>
 
+#ifdef __unix__
+    #include <unistd.h>
+#elif defined(_WIN32)
+
+#endif
+
 namespace iro {
     enum effect_type {
         foreground_color,
@@ -147,7 +153,7 @@ namespace iro {
 
 
     namespace detail {
-        void push_effect(std::ostream& stream, effect_type type, const char* code);
+        unsigned push_effect(std::ostream& stream, effect_type type, const char* code);
         void pop_effect(std::ostream& stream, effect_type type);
         void set_top(std::ostream& stream, effect_type type, const char* code);
         void reapply_top(std::ostream& stream, effect_type type);
@@ -162,6 +168,7 @@ namespace iro {
 
         friend persist operator<<(std::ostream&, const effect_string&);
         friend persist&& operator<<(persist&, const effect_string&);
+
     public:
         persist();
 
@@ -472,11 +479,56 @@ namespace iro {
 
 
         namespace detail {
+            #ifdef __unix__
+                bool stdout_isatty() {
+                    return isatty(STDOUT_FILENO);
+                }
+                bool stderr_isatty() {
+                    return isatty(STDERR_FILENO);
+                }
+            #elif defined(_WIN32)
+
+            #endif
+
+            bool isatty(const std::ostream& os) {
+                if(&os == &std::cout) {
+                    return stdout_isatty();
+                }
+                else if(&os == &std::cerr) {
+                    return stderr_isatty();
+                }
+                else {
+                    return false;
+                }
+            }
+
             effect create(const char* code, effect_type type) noexcept {
                 return {code, type};
             }
+
+            struct effect_type_to_stream_hash_t {
+                std::size_t operator()(const std::ostream* os) const {
+                    if(((os == &std::cout) || (os == &std::cerr)) && stdout_isatty() && stderr_isatty()) {
+                        return std::hash<const std::ostream*>()(&std::cout);
+                    }
+                    else {
+                        return std::hash<const std::ostream*>()(os);
+                    }
+                }
+            };
+
+            struct effect_type_to_stream_equals_t {
+                std::size_t operator()(const std::ostream* lhs, const std::ostream* rhs) const {
+                    if(((lhs == &std::cout) || (lhs == &std::cerr)) && ((rhs == &std::cout) || (rhs == &std::cerr)) && stdout_isatty() && stderr_isatty()) {
+                        return true;
+                    }
+                    else {
+                        return (lhs == rhs);
+                    }
+                }
+            };
                                                                             // the code
-            static std::array<std::unordered_map<std::ostream*, std::stack<const char*>>,
+            static std::array<std::unordered_map<std::ostream*, std::vector<const char*>, effect_type_to_stream_hash_t, effect_type_to_stream_equals_t>,
                               number_of_effect_types> effect_type_to_stream_to_effect_stack_;
 
             static std::array<const char*, number_of_effect_types> effect_type_to_default_code_ = {"\x1b[39m",
@@ -485,20 +537,50 @@ namespace iro {
                                                                                                    "\x1b[24m",
                                                                                                    "\x1b[25m"};
 
-            void push_effect(std::ostream& stream, effect_type type, const char* code) {
+            // returns location in map
+            unsigned push_effect(std::ostream& stream, effect_type type, const char* code) {
                 auto& map = effect_type_to_stream_to_effect_stack_[type];
                 if(!map.count(&stream)) { // I'm using c++14, so .contains() isn't available :(
-                    map[&stream].push(effect_type_to_default_code_[type]);
+                    map[&stream].push_back(effect_type_to_default_code_[type]);
                 }
-                map.at(&stream).push(code);
+                unsigned ret = map.at(&stream).size();
+                map.at(&stream).push_back(code);
                 stream << code;
+
+                std::ostream* streams[] = {&std::cout, &std::cerr};
+
+                if(stdout_isatty() && stderr_isatty()) {
+                    for(unsigned i = 0; i < 2; ++i) {
+                        if(&stream == streams[i]) {
+                            *streams[!i] << code;
+                            break;
+                        }               // ^ !i turns 0 into 1 and 1 into 0,
+                                        // so this basically says "if the stream is cout, also print this effect to cerr,
+                                        // and if the stream is cerr, also print this iffect to cout
+                    }
+                }
+
+                return ret;
             }
 
             void pop_effect(std::ostream& stream, effect_type type) {
                 auto& map = effect_type_to_stream_to_effect_stack_[type];
                 auto& stack = map.at(&stream);
-                stack.pop();
-                stream << stack.top();
+                stack.pop_back();
+                stream << stack.back();
+
+                std::ostream* streams[] = {&std::cout, &std::cerr};
+
+                if(stdout_isatty() && stderr_isatty()) {
+                    for(unsigned i = 0; i < 2; ++i) {
+                        if(&stream == streams[i]) {
+                            *streams[!i] << stack.back();
+                            break;
+                        }               // ^ !i turns 0 into 1 and 1 into 0,
+                                        // so this basically says "if the stream is cout, also print this effect to cerr,
+                                        // and if the stream is cerr, also print this iffect to cout
+                    }
+                }
 
                 /*if(stack.size() == 1) {
                     map.erase(&stream);
@@ -506,16 +588,16 @@ namespace iro {
             }
 
             void set_top(std::ostream& stream, effect_type type, const char* code) {
-                effect_type_to_stream_to_effect_stack_[type].at(&stream).top() = code;
+                effect_type_to_stream_to_effect_stack_[type].at(&stream).back() = code;
                 stream << code;
             }
 
             void reapply_top(std::ostream& stream, effect_type type) {
                 auto& map = effect_type_to_stream_to_effect_stack_[type];
                 if(!map.count(&stream)) { // I'm using c++14, so .contains() isn't available :(
-                    map[&stream].push(effect_type_to_default_code_[type]);
+                    map[&stream].push_back(effect_type_to_default_code_[type]);
                 }
-                stream << map.at(&stream).top();
+                stream << map.at(&stream).back();
             }
         }
     #endif
