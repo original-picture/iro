@@ -349,20 +349,21 @@ namespace iro {
 
         persist::persist(std::ostream& os, const effect& e) : stream_(&os) {
             for(unsigned i = 0; i < effect_locations_in_stack_.size(); ++i) {
-                
+                effect_locations_in_stack_[i] = detail::push_empty_effect(*stream_, static_cast<effect_type>(i));
             }
-            effect_locations_in_stack_.fill(0);
-
-            effect_locations_in_stack_[e.type_] = detail::push_effect(os, e.type_, e.code_);
+            detail::set(os, e.type_, effect_locations_in_stack_[e.type_], e.code_);
         }
 
         persist::persist(std::ostream& os, const effect_set& e) : stream_(&os) {
-            effect_locations_in_stack_.fill(0);
+            for(unsigned i = 0; i < effect_locations_in_stack_.size(); ++i) {
+                effect_locations_in_stack_[i] = detail::push_empty_effect(*stream_, static_cast<effect_type>(i));
+            }
 
             for(unsigned i = 0; i < e.type_to_code_.size(); ++i) {
                 auto& el =  e.type_to_code_[i];
                 if(el) {
-                    effect_locations_in_stack_[i] = detail::push_effect(os, static_cast<effect_type>(i), el);
+                    auto type = static_cast<effect_type>(i);
+                    detail::set(os, type, effect_locations_in_stack_[type], el);
                 }
             }
         }
@@ -373,6 +374,7 @@ namespace iro {
             effect_locations_in_stack_ = other.effect_locations_in_stack_;
             other.effect_locations_in_stack_.fill(0);
         }
+
         persist& persist::operator=(persist&& rhs) {
             stream_ = rhs.stream_;
 
@@ -382,25 +384,21 @@ namespace iro {
         }
 
         persist&& persist::operator<<(const effect& e) {
-            if(effect_locations_in_stack_[e.type_]) {
+            detail::set(*stream_, e.type_, effect_locations_in_stack_[e.type_], e.code_);
+            /*if(effect_locations_in_stack_[e.type_]) {
                 detail::set_top(*stream_, e.type_, e.code_);
             }
             else {
                 effect_locations_in_stack_[e.type_] = detail::push_effect(*stream_, e.type_, e.code_);
-            }
+            }*/
             return std::move(*this);
         }
 
         persist&& persist::operator<<(const effect_set& es) {
             for(unsigned i = 0; i < es.type_to_code_.size(); ++i) {
-                auto type = static_cast<effect_type>(i);
-                auto code = es.type_to_code_[i];
-
-                if(effect_locations_in_stack_[type]) {
-                    detail::set_top(*stream_, type, code);
-                }
-                else {
-                    effect_locations_in_stack_[type] = detail::push_effect(*stream_, type, code);
+                if(es.type_to_code_[i]) {
+                    auto type = static_cast<effect_type>(i);
+                    detail::set(*stream_, type, effect_locations_in_stack_[type], es.type_to_code_[i]);
                 }
             }
 
@@ -599,9 +597,9 @@ namespace iro {
                         }
                     }
                 }
-                else {
+                /*else { no, what were you thinking???
                     pop_effect(stream, type); // pop again because we didn't actually apply anything.
-                }                             // this cycle continues as many times as necessary
+                }                             // this cycle continues as many times as necessary*/
 
                 /*if(stack.size() == 1) {
                     map.erase(&stream);
@@ -609,7 +607,16 @@ namespace iro {
             }
 
             void set(std::ostream& stream, effect_type type, unsigned index, const char* code) {
-                effect_type_to_stream_to_effect_stack_[type].at(&stream)[index] = code;
+                auto& stack = effect_type_to_stream_to_effect_stack_[type].at(&stream);
+                stack[index] = code;
+
+                bool is_top_non_emtpy = true;
+                for(unsigned i = index+1; i < stack.size(); ++i) {
+                    is_top_non_emtpy &= !stack[i];
+                }
+                if(is_top_non_emtpy) {
+                    stream << code;
+                }
             }
 
             void set_top(std::ostream& stream, effect_type type, const char* code) {
@@ -622,7 +629,14 @@ namespace iro {
                 if(!map.count(&stream)) { // I'm using c++14, so .contains() isn't available :(
                     map[&stream].push_back(effect_type_to_default_code_[type]);
                 }
-                stream << map.at(&stream).back();
+                auto& stack = map.at(&stream);
+
+                for(unsigned i = stack.size(); i > 0; --i) {
+                    if(stack[i-1]) { // find first code that isn't null
+                        stream << stack[i-1];
+                        break;
+                    }
+                }
             }
         }
     #endif
