@@ -156,6 +156,7 @@ namespace iro {
 
     namespace detail {
         unsigned push_effect(std::ostream& stream, effect_type type, const char* code);
+        unsigned push_empty_effect(std::ostream& stream, effect_type type);
         void pop_effect(std::ostream& stream, effect_type type);
         void set(std::ostream& stream, effect_type type, unsigned index, const char* code);
         void set_top(std::ostream& stream, effect_type type, const char* code);
@@ -166,8 +167,8 @@ namespace iro {
     class effect_string;
 
     class persist {
-        std::array<unsigned, number_of_effect_types> effect_locations_in_stack_;
-        std::ostream* stream_ = nullptr;
+        std::array<unsigned, number_of_effect_types> effect_locations_in_stack_; // 0 is a special value that indicates an inactive effect
+        std::ostream* stream_ = nullptr;                                         // 0 is always available because index 0 (the first element in the stack) is always the default effect for a given effect type
 
         friend persist operator<<(std::ostream&, const effect_string&);
         friend persist&& operator<<(persist&, const effect_string&);
@@ -341,17 +342,15 @@ namespace iro {
 
 
         persist::persist() {
-                /*for(unsigned i = 0; i < effects_.type_to_code_.size(); ++i) {
-                const auto& e = effects_.type_to_code_[i];
-                if(e) {
-                    detail::push_effect()
-                }
-            }*/
-
-            effect_locations_in_stack_.fill(0);
+            for(unsigned i = 0; i < effect_locations_in_stack_.size(); ++i) {
+                effect_locations_in_stack_[i] = detail::push_empty_effect(*stream_, static_cast<effect_type>(i));
+            }
         }
 
         persist::persist(std::ostream& os, const effect& e) : stream_(&os) {
+            for(unsigned i = 0; i < effect_locations_in_stack_.size(); ++i) {
+                
+            }
             effect_locations_in_stack_.fill(0);
 
             effect_locations_in_stack_[e.type_] = detail::push_effect(os, e.type_, e.code_);
@@ -387,7 +386,6 @@ namespace iro {
                 detail::set_top(*stream_, e.type_, e.code_);
             }
             else {
-
                 effect_locations_in_stack_[e.type_] = detail::push_effect(*stream_, e.type_, e.code_);
             }
             return std::move(*this);
@@ -545,6 +543,8 @@ namespace iro {
                                                                                                    "\x1b[24m",
                                                                                                    "\x1b[25m"};
 
+            static std::ostream* streams_[] = {&std::cout, &std::cerr};
+
             // returns location in map
             unsigned push_effect(std::ostream& stream, effect_type type, const char* code) {
                 auto& map = effect_type_to_stream_to_effect_stack_[type];
@@ -555,12 +555,10 @@ namespace iro {
                 map.at(&stream).push_back(code);
                 stream << code;
 
-                std::ostream* streams[] = {&std::cout, &std::cerr};
-
                 if(stdout_isatty() && stderr_isatty()) {
                     for(unsigned i = 0; i < 2; ++i) {
-                        if(&stream == streams[i]) {
-                            *streams[!i] << code;
+                        if(&stream == streams_[i]) {
+                            *streams_[!i] << code;
                             break;
                         }               // ^ !i turns 0 into 1 and 1 into 0,
                                         // so this basically says "if the stream is cout, also print this effect to cerr,
@@ -571,24 +569,39 @@ namespace iro {
                 return ret;
             }
 
+            unsigned push_empty_effect(std::ostream& stream, effect_type type) {
+                auto& map = effect_type_to_stream_to_effect_stack_[type];
+                if(!map.count(&stream)) { // I'm using c++14, so .contains() isn't available :(
+                    map[&stream].push_back(effect_type_to_default_code_[type]);
+                }
+                unsigned ret = map.at(&stream).size();
+                map.at(&stream).push_back(nullptr);
+
+                return ret;
+            }
+
             void pop_effect(std::ostream& stream, effect_type type) {
                 auto& map = effect_type_to_stream_to_effect_stack_[type];
                 auto& stack = map.at(&stream);
                 stack.pop_back();
-                stream << stack.back();
 
-                std::ostream* streams[] = {&std::cout, &std::cerr};
+                if(stack.back()) { // don't apply a null code
+                    stream << stack.back();
 
-                if(stdout_isatty() && stderr_isatty()) {
-                    for(unsigned i = 0; i < 2; ++i) {
-                        if(&stream == streams[i]) {
-                            *streams[!i] << stack.back();
-                            break;
-                        }               // ^ !i turns 0 into 1 and 1 into 0,
-                                        // so this basically says "if the stream is cout, also print this effect to cerr,
-                                        // and if the stream is cerr, also print this iffect to cout
+                    if(stdout_isatty() && stderr_isatty()) {
+                        for(unsigned i = 0; i < 2; ++i) {
+                            if(&stream == streams_[i]) {
+                                *streams_[!i] << stack.back();
+                                break;
+                            }               // ^ !i turns 0 into 1 and 1 into 0,
+                            // so this basically says "if the stream is cout, also print this effect to cerr,
+                            // and if the stream is cerr, also print this iffect to cout
+                        }
                     }
                 }
+                else {
+                    pop_effect(stream, type); // pop again because we didn't actually apply anything.
+                }                             // this cycle continues as many times as necessary
 
                 /*if(stack.size() == 1) {
                     map.erase(&stream);
