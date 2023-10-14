@@ -531,6 +531,7 @@ namespace iro {
                     }
                 }
             };
+
                                                                             // the code
             static std::array<std::unordered_map<std::ostream*, std::vector<const char*>, effect_type_to_stream_hash_t, effect_type_to_stream_equals_t>,
                               number_of_effect_types> effect_type_to_stream_to_effect_stack_;
@@ -592,8 +593,8 @@ namespace iro {
                                 *streams_[!i] << stack.back();
                                 break;
                             }               // ^ !i turns 0 into 1 and 1 into 0,
-                            // so this basically says "if the stream is cout, also print this effect to cerr,
-                            // and if the stream is cerr, also print this iffect to cout
+                                            // so this basically says "if the stream is cout, also print this effect to cerr,
+                                            // and if the stream is cerr, also print this iffect to cout
                         }
                     }
                 }
