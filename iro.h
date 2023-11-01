@@ -128,11 +128,15 @@ namespace iro {
 
     /// /effects  ///
 
+    class effect_set;
+    namespace detail{ unsigned push_effects(std::ostream* stream, const effect_set& effects); }
     class effect_set {
         std::array<const char*, number_of_effect_types> type_to_code_;
 
         friend class persist;
         friend class effect_string;
+
+        friend unsigned detail::push_effects(std::ostream* stream, const effect_set& effects);
 
     public:
         effect_set();
@@ -156,22 +160,22 @@ namespace iro {
 
     namespace detail {
         unsigned push_effect(std::ostream& stream, effect_type type, const char* code);
-        unsigned push_empty_effect(std::ostream& stream, effect_type type);
-        void pop_effect(std::ostream& stream, effect_type type);
-        void set(std::ostream& stream, effect_type type, unsigned index, const char* code);
-        void set_top(std::ostream& stream, effect_type type, const char* code);
-        void reapply_top(std::ostream& stream, effect_type type);
+        unsigned push_empty_effect(std::ostream* stream);
+        void pop_effect(std::ostream* stream);
+        void set(std::ostream* stream, effect_type type, unsigned index, const char* code);
+        void set_top(std::ostream* stream, effect_type type, const char* code);
+        void reapply_top(std::ostream* stream, effect_type type);
     }
 
 
     class effect_string;
 
     class persist {
-        std::array<unsigned, number_of_effect_types> effect_locations_in_stack_; // 0 is a special value that indicates an inactive effect
-        std::ostream* stream_ = nullptr;                                         // 0 is always available because index 0 (the first element in the stack) is always the default effect for a given effect type
+        unsigned location_in_stack_;            // 0 is a special value that indicates a persist with no active effects
+        std::ostream* stream_ = nullptr;        // 0 is always available because index 0 (the first element in the stack) is always the default effect set
 
-        friend persist operator<<(std::ostream&, const effect_string&);
-        friend persist&& operator<<(persist&, const effect_string&);
+        friend persist   operator<<(std::ostream&, const effect_string&);
+        friend persist&& operator<<(persist&,      const effect_string&);
 
     public:
         persist();
@@ -274,7 +278,6 @@ namespace iro {
     #ifdef IRO_IMPL
         effect::effect(const char* code, effect_type type) noexcept : code_(code), type_(type) {}
 
-
         effect_set::effect_set() {
             type_to_code_.fill(nullptr);
         }
@@ -318,7 +321,7 @@ namespace iro {
         }
 
         effect_set&& effect_set::operator|(const effect_set& rhs)&& {
-            return std::move(*this |= rhs);
+            return std::move(*this |= rhs); // avoids creating unnecessary temporaries
         }
 
         effect_set& effect_set::operator|=(const effect_set& rhs)& {
@@ -340,11 +343,8 @@ namespace iro {
             return {e1, e2};
         }
 
-
         persist::persist() {
-            for(unsigned i = 0; i < effect_locations_in_stack_.size(); ++i) {
-                effect_locations_in_stack_[i] = detail::push_empty_effect(*stream_, static_cast<effect_type>(i));
-            }
+            detail::push_empty_effect(stream_);
         }
 
         persist::persist(std::ostream& os, const effect& e) : stream_(&os) {
@@ -421,7 +421,6 @@ namespace iro {
             }
         }
 
-
         effect_string::string_and_effects& effect_string::back_() {
             if(!strings_.size()) {
                 strings_.push_back({});
@@ -481,8 +480,40 @@ namespace iro {
             return ret;
         }
 
-
         namespace detail {
+            template<typename T>
+            struct filled_array_helper_t {
+                const T& val;
+
+                filled_array_helper_t(const T& val) : val(val) {}
+
+                template<std::size_t N>
+                operator std::array<T,N>() {
+                    std::array<T,N> ret;
+                    ret.fill(val);
+                    return ret;
+                }
+            };
+
+            template<typename T>
+            filled_array_helper_t<T> filled_array(const T& value) {
+                return filled_array_helper_t<T>(value);
+            }
+
+            template<std::size_t N, typename T>
+            std::array<T,N> filled_array(const T& value) {
+                std::array<T,N> ret;
+                ret.fill(value);
+                return ret;
+            }
+
+            template<std::size_t N, typename T, typename U>
+            std::array<T,N> fill_array_and_set_one_value(const T& fill_value, unsigned index, const U& set_value) {
+                auto arr = filled_array<T, N>(fill_value);
+                arr[index] = set_value;
+                return arr;
+            }
+
             #ifdef __unix__
                 bool stdout_isatty() {
                     return isatty(STDOUT_FILENO);
@@ -533,8 +564,12 @@ namespace iro {
             };
 
                                                                             // the code
-            static std::array<std::unordered_map<std::ostream*, std::vector<const char*>, effect_type_to_stream_hash_t, effect_type_to_stream_equals_t>,
-                              number_of_effect_types> effect_type_to_stream_to_effect_stack_;
+            /*static std::array<std::unordered_map<std::ostream*, std::vector<const char*>, effect_type_to_stream_hash_t, effect_type_to_stream_equals_t>,
+                              number_of_effect_types> effect_type_to_stream_to_effect_stack_;*/
+
+            std::unordered_map<std::ostream*,
+                               std::vector<std::array<const char*, number_of_effect_types>>,
+                               effect_type_to_stream_hash_t, effect_type_to_stream_equals_t> stream_to_stack_;
 
             static std::array<const char*, number_of_effect_types> effect_type_to_default_code_ = {"\x1b[39m",
                                                                                                    "\x1b[49m",
@@ -545,60 +580,73 @@ namespace iro {
             static std::ostream* streams_[] = {&std::cout, &std::cerr};
 
             // returns location in map
-            unsigned push_effect(std::ostream& stream, effect_type type, const char* code) {
-                auto& map = effect_type_to_stream_to_effect_stack_[type];
-                if(!map.count(&stream)) { // I'm using c++14, so .contains() isn't available :(
-                    map[&stream].push_back(effect_type_to_default_code_[type]);
+            unsigned push_effect(std::ostream* stream, effect_type type, const char* code) {
+                if(!stream_to_stack_.count(stream)) { // I'm using c++14, so .contains() isn't available :(
+                    stream_to_stack_[stream].push_back(effect_type_to_default_code_);
                 }
-                unsigned ret = map.at(&stream).size();
-                map.at(&stream).push_back(code);
-                stream << code;
+                auto& stack = stream_to_stack_.at(stream);
+                unsigned ret = stack.size();
+                stack.push_back(filled_array<const char*>(nullptr));
+                stack.back()[type] = code;
+                *stream << code;
 
                 if(stdout_isatty() && stderr_isatty()) {
                     for(unsigned i = 0; i < 2; ++i) {
-                        if(&stream == streams_[i]) {
+                        if(stream == streams_[i]) {
                             *streams_[!i] << code;
                             break;
                         }               // ^ !i turns 0 into 1 and 1 into 0,
                                         // so this basically says "if the stream is cout, also print this effect to cerr,
-                                        // and if the stream is cerr, also print this iffect to cout
+                                        // and if the stream is cerr, also print this effect to cout
                     }
                 }
 
                 return ret;
             }
 
-            unsigned push_empty_effect(std::ostream& stream, effect_type type) {
-                auto& map = effect_type_to_stream_to_effect_stack_[type];
-                if(!map.count(&stream)) { // I'm using c++14, so .contains() isn't available :(
-                    map[&stream].push_back(effect_type_to_default_code_[type]);
+            unsigned push_empty_effect(std::ostream* stream) {
+                if(!stream_to_stack_.count(stream)) { // I'm using c++14, so .contains() isn't available :(
+                    stream_to_stack_[stream].push_back(effect_type_to_default_code_);
                 }
-                unsigned ret = map.at(&stream).size();
-                map.at(&stream).push_back(nullptr);
+                auto& stack = stream_to_stack_.at(stream);
+                unsigned ret = stack.size();
+                stack.push_back(filled_array<const char*>(nullptr));
 
                 return ret;
             }
 
-            void pop_effect(std::ostream& stream, effect_type type) {
-                auto& map = effect_type_to_stream_to_effect_stack_[type];
-                auto& stack = map.at(&stream);
+            unsigned push_effects(std::ostream* stream, const effect_set& effects) {
+                push_empty_effect(stream);
+                for(unsigned i = 0; i < number_of_effect_types; ++i) {
+                    if(effects.type_to_code_[i]) {
+                        set_top(stream, static_cast<effect_type>(i), effects.type_to_code_[i]);
+                    }
+                }
+            }
+
+            void pop_effect(std::ostream* stream) {
+                auto& stack = stream_to_stack_.at(stream);
                 stack.pop_back();
 
-                if(stack.back()) { // don't apply a null code
-                    stream << stack.back();
+                for(const auto& e : stack.back()) {
+                    if(e) { // don't apply a null code
+                        *stream << e;
 
-                    if(stdout_isatty() && stderr_isatty()) {
-                        for(unsigned i = 0; i < 2; ++i) {
-                            if(&stream == streams_[i]) {
-                                *streams_[!i] << stack.back();
-                                break;
-                            }               // ^ !i turns 0 into 1 and 1 into 0,
-                                            // so this basically says "if the stream is cout, also print this effect to cerr,
-                                            // and if the stream is cerr, also print this iffect to cout
+                        if(stdout_isatty() && stderr_isatty()) {
+                            for(unsigned i = 0; i < 2; ++i) {
+                                if(stream == streams_[i]) {
+                                    *streams_[!i] << e;
+                                    break;
+                                }               // ^ !i turns 0 into 1 and 1 into 0,
+                                                // so this basically says "if the stream is cout, also print this effect to cerr,
+                                                // and if the stream is cerr, also print this effect to cout
+                            }
                         }
                     }
                 }
+
                 /*else { no, what were you thinking???
+                 *         don't need to do this because the next effect will be popped automatically when it gets destroyed
                     pop_effect(stream, type); // pop again because we didn't actually apply anything.
                 }                             // this cycle continues as many times as necessary*/
 
@@ -608,34 +656,41 @@ namespace iro {
             }
 
             void set(std::ostream& stream, effect_type type, unsigned index, const char* code) {
-                auto& stack = effect_type_to_stream_to_effect_stack_[type].at(&stream);
-                stack[index] = code;
+                auto& stack = stream_to_stack_.at(&stream);
+                stack[index][type] = code;
 
-                bool is_top_non_emtpy = true;
+                bool is_top_non_empty = true;
                 for(unsigned i = index+1; i < stack.size(); ++i) {
-                    is_top_non_emtpy &= !stack[i];
+                    is_top_non_empty &= !(stack[i][type]);
                 }
-                if(is_top_non_emtpy) {
+                if(is_top_non_empty) {
                     stream << code;
                 }
             }
 
             void set_top(std::ostream& stream, effect_type type, const char* code) {
-                effect_type_to_stream_to_effect_stack_[type].at(&stream).back() = code;
+                stream_to_stack_.at(&stream).back()[type] = code;
                 stream << code;
             }
 
-            void reapply_top(std::ostream& stream, effect_type type) {
-                auto& map = effect_type_to_stream_to_effect_stack_[type];
-                if(!map.count(&stream)) { // I'm using c++14, so .contains() isn't available :(
-                    map[&stream].push_back(effect_type_to_default_code_[type]);
+            void reapply_top(std::ostream* stream, effect_type type) {
+                /*if(!stream_to_stack_.count(stream)) { // I'm using c++14, so .contains() isn't available :(
+                    stream_to_stack_.at(stream).push_back(filled_array<const char*>(nullptr));
                 }
                 auto& stack = map.at(&stream);
 
                 for(unsigned i = stack.size(); i > 0; --i) {
                     if(stack[i-1]) { // find first code that isn't null
-                        stream << stack[i-1];
+                        *stream << stack[i-1];
                         break;
+                    }
+                }*/
+
+                if(stream_to_stack_.count(stream)) {
+                    for(const auto& e : stream_to_stack_.at(stream).back()) {
+                        if(e) {
+                            *stream << e;
+                        }
                     }
                 }
             }
