@@ -18,7 +18,7 @@ int main() {
     p0 << bold;
     {
         auto p1 = std::cout << bright_red << "赤\n";
-        persist p2;
+        persist p2(std::cout);
         {
             p2 = std::cout << bright_green << effect_string(red, "now red ") << "緑\n";
         }
