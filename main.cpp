@@ -40,24 +40,19 @@ int main() {
 
     return 0;*/
 
-    /*{
-        auto p = std::cout << bold;
-        auto p0 = std::cout << bright_green;
+    {
+        auto p = std::cout << bright_green;
+        auto p0 = std::cout << bold;
         std::cout << "green and bold\n";
 
         {
             auto p1 = std::move(p0);
-            std::cout << "still green and bold\n";
+            p << bright_red;
+            std::cout << "red and bold\n";
         }
-        std::cout << "just bold\n";
-    }
-
-    std::cout << "normal\n";*/
-
-    {
-        auto p0 = std::cout << bold;
-        std::cout << "bold\n";
+        std::cout << "just red\n";
     }
 
     std::cout << "normal\n";
+
 }

@@ -581,7 +581,7 @@ namespace iro {
                 }
                 auto& stack = stream_to_stack_.at(stream);
                 unsigned ret = stack.size();
-                stack.push_back(stack.back());
+                stack.push_back(filled_array<const char*>(nullptr));
 
                 return ret;
             }
@@ -652,8 +652,8 @@ namespace iro {
                                 *streams_[!i] << code;
                                 break;
                             }               // ^ !i turns 0 into 1 and 1 into 0,
-                            // so this basically says "if the stream is cout, also print this effect to cerr,
-                            // and if the stream is cerr, also print this effect to cout
+                                            // so this basically says "if the stream is cout, also print this effect to cerr,
+                                            // and if the stream is cerr, also print this effect to cout
                         }
                     }
                 }
