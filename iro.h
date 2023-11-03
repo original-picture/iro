@@ -601,9 +601,10 @@ namespace iro {
                 auto& stack = stream_to_stack_.at(stream);
                 stack.pop_back();
 
-                for(unsigned index_in_stack = stack.size(); index_in_stack > 0; --index_in_stack) { // walk back and find the first nonempty effect
-                    const auto& effect = stack[index_in_stack-1];
-                    for(const auto& e : effect) {
+                for(unsigned effect_type_index = 0; effect_type_index < number_of_effect_types; ++effect_type_index) {
+                    for(unsigned index_in_stack = stack.size(); index_in_stack > 0; --index_in_stack) { // iterate backwards and find the first nonempty effect
+                        const auto& effect = stack[index_in_stack-1];
+                        const auto& e = effect[effect_type_index];
                         if(e) { // don't apply a null code
                             *stream << e;
 
@@ -611,15 +612,18 @@ namespace iro {
                                 for(unsigned i = 0; i < 2; ++i) {
                                     if(stream == streams_[i]) {
                                         *streams_[!i] << e;
-                                        return;
+                                        break;
                                     }               // ^ !i turns 0 into 1 and 1 into 0,
                                     // so this basically says "if the stream is cout, also print this effect to cerr,
                                     // and if the stream is cerr, also print this effect to cout
                                 }
                             }
+
+                            break;
                         }
                     }
                 }
+
 
                 /*else { no, what were you thinking???
                  *         don't need to do this because the next effect will be popped automatically when it gets destroyed
