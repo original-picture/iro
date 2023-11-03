@@ -169,6 +169,7 @@ namespace iro {
         void set(std::ostream* stream, unsigned index, effect_type type, const char* code);
         void set_top(std::ostream* stream, effect_type type, const char* code);
         void reapply_top(std::ostream* stream, effect_type type);
+        bool persist_has_effect_of_type(std::ostream* stream, unsigned index, effect_type type);
     }
 
 
@@ -380,11 +381,11 @@ namespace iro {
 
         persist&& persist::operator<<(const effect& e) {
             detail::set(stream_, location_in_stack_, e.type_, e.code_);
-            /*if(effect_locations_in_stack_[e.type_]) {
-                detail::set_top(*stream_, e.type_, e.code_);
+            /*if(detail::persist_has_effect_of_type(stream_, location_in_stack_, e.type_)) {
+                detail::set_top(stream_, e.type_, e.code_);
             }
             else {
-                effect_locations_in_stack_[e.type_] = detail::push_effect(*stream_, e.type_, e.code_);
+                location_in_stack_ = detail::push_effect(stream_, e.type_, e.code_);
             }*/
             return std::move(*this);
         }
@@ -568,25 +569,8 @@ namespace iro {
 
             // returns location in map
             unsigned push_effect(std::ostream* stream, effect_type type, const char* code) {
-                if(!stream_to_stack_.count(stream)) { // I'm using c++14, so .contains() isn't available :(
-                    stream_to_stack_[stream].push_back(effect_type_to_default_code_);
-                }
-                auto& stack = stream_to_stack_.at(stream);
-                unsigned ret = stack.size();
-                stack.push_back(filled_array<const char*>(nullptr));
-                stack.back()[type] = code;
-                *stream << code;
-
-                if(stdout_isatty() && stderr_isatty()) {
-                    for(unsigned i = 0; i < 2; ++i) {
-                        if(stream == streams_[i]) {
-                            *streams_[!i] << code;
-                            break;
-                        }               // ^ !i turns 0 into 1 and 1 into 0,
-                                        // so this basically says "if the stream is cout, also print this effect to cerr,
-                                        // and if the stream is cerr, also print this effect to cout
-                    }
-                }
+                auto ret = push_empty_effect(stream);
+                set_top(stream, type, code);
 
                 return ret;
             }
@@ -597,7 +581,7 @@ namespace iro {
                 }
                 auto& stack = stream_to_stack_.at(stream);
                 unsigned ret = stack.size();
-                stack.push_back(filled_array<const char*>(nullptr));
+                stack.push_back(stack.back());
 
                 return ret;
             }
@@ -617,18 +601,21 @@ namespace iro {
                 auto& stack = stream_to_stack_.at(stream);
                 stack.pop_back();
 
-                for(const auto& e : stack.back()) {
-                    if(e) { // don't apply a null code
-                        *stream << e;
+                for(unsigned index_in_stack = stack.size(); index_in_stack > 0; --index_in_stack) { // walk back and find the first nonempty effect
+                    const auto& effect = stack[index_in_stack-1];
+                    for(const auto& e : effect) {
+                        if(e) { // don't apply a null code
+                            *stream << e;
 
-                        if(stdout_isatty() && stderr_isatty()) {
-                            for(unsigned i = 0; i < 2; ++i) {
-                                if(stream == streams_[i]) {
-                                    *streams_[!i] << e;
-                                    break;
-                                }               // ^ !i turns 0 into 1 and 1 into 0,
-                                                // so this basically says "if the stream is cout, also print this effect to cerr,
-                                                // and if the stream is cerr, also print this effect to cout
+                            if(stdout_isatty() && stderr_isatty()) { // TODO: put this in a function to get rid of code duplication
+                                for(unsigned i = 0; i < 2; ++i) {
+                                    if(stream == streams_[i]) {
+                                        *streams_[!i] << e;
+                                        return;
+                                    }               // ^ !i turns 0 into 1 and 1 into 0,
+                                    // so this basically says "if the stream is cout, also print this effect to cerr,
+                                    // and if the stream is cerr, also print this effect to cout
+                                }
                             }
                         }
                     }
@@ -654,6 +641,17 @@ namespace iro {
                 }
                 if(is_top_non_empty) {
                     *stream << code;
+
+                    if(stdout_isatty() && stderr_isatty()) {
+                        for(unsigned i = 0; i < 2; ++i) {
+                            if(stream == streams_[i]) {
+                                *streams_[!i] << code;
+                                break;
+                            }               // ^ !i turns 0 into 1 and 1 into 0,
+                            // so this basically says "if the stream is cout, also print this effect to cerr,
+                            // and if the stream is cerr, also print this effect to cout
+                        }
+                    }
                 }
             }
 
@@ -665,9 +663,12 @@ namespace iro {
                 }
             }
 
+            bool persist_has_effect_of_type(std::ostream* stream, unsigned index, effect_type type) {
+                return stream_to_stack_.at(stream)[index][type];
+            }
+
             void set_top(std::ostream* stream, effect_type type, const char* code) {
-                stream_to_stack_.at(stream).back()[type] = code;
-                *stream << code;
+                set(stream, stream_to_stack_.at(stream).size()-1, type, code);
             }
 
             void reapply_top(std::ostream* stream, effect_type type) {

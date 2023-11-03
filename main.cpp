@@ -10,7 +10,7 @@ persist print_stuff() {
 }
 
 int main() {
-
+/*
     std::cout << "普通\n";
     auto p0 = print_stuff();
     std::cout << "青\n";
@@ -26,8 +26,7 @@ int main() {
     }
     std::cout << "また青\n";
 
-    std::cerr << "still blue\n";
-
+    std::cerr << "still blue\n";*/
   /*  auto p0 = std::cout << bright_red << "red\n";
     auto p1 = std::cout << bright_green << "green\n";
 
@@ -40,4 +39,14 @@ int main() {
     std::cout <<  "Should be blue\n";
 
     return 0;*/
+
+  auto p = std::cout << bold;
+  auto p0 = std::cout << bright_green;
+  std::cout << "green\n";
+
+    {
+        auto p1 = std::move(p0);
+        std::cout << "still green\n";
+    }
+    std::cout << "just bold\n";
 }
