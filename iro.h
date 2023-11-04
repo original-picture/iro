@@ -6,6 +6,7 @@
 #include <ostream>
 #include <sstream>
 #include <vector>
+#include <cassert>
 
 #ifdef __unix__
     #include <unistd.h>
@@ -168,6 +169,7 @@ namespace iro {
         void pop_effect(std::ostream* stream);
         void set(std::ostream* stream, unsigned index, effect_type type, const char* code);
         void set_top(std::ostream* stream, effect_type type, const char* code);
+        const char* get_top_code(const std::ostream* stream, effect_type type);
         void reapply_top(std::ostream* stream, effect_type type);
         bool persist_has_effect_of_type(std::ostream* stream, unsigned index, effect_type type);
     }
@@ -279,6 +281,21 @@ namespace iro {
             ret += arg;
             return ret;
         }
+
+        /**
+         * Returns an std::string with the correct escape codes embedded
+         *
+         * This function is unsafe because the conversion to an std::string embeds escape codes directly as character data.
+         * This means that the escape codes to undo the effects are
+         *
+         * You need to make absolutely sure that you don't modify any iro state between the call to unsafe_string and the resultant string being printed to tge given stream
+         * And (obviously), don't print the given
+         *
+         * You should really only use this function if you need to interface with a different printing library
+         *
+         * @param stream the stream you will eventually print this string to
+         */
+        std::string unsafe_string(const std::ostream& stream) const;
     };
 
     persist   operator<<(std::ostream& os, const effect_string& es);
@@ -445,8 +462,23 @@ namespace iro {
             return (*this << std::move(arg));
         }
 
-        persist&& operator<<(persist& p, const effect_string& es) {
+        std::string effect_string::unsafe_string(const std::ostream& stream) const {
+            std::string ret;
+            for(const auto& string : strings_) {
+                ret += string.string;
 
+                for(unsigned i = 0; i < string.active_effects_.size(); ++i) {
+                    if(string.active_effects_[i]) {
+                        ret += detail::get_top_code(&stream, static_cast<effect_type>(i));
+                    }
+                }
+            }
+
+            return ret;
+        }
+
+        persist&& operator<<(persist& p, const effect_string& es) {
+/*
             for(const auto& string : es.strings_) {
                 p << string.string;
 
@@ -455,9 +487,9 @@ namespace iro {
                         detail::reapply_top(p.stream_, static_cast<effect_type>(i));
                     }
                 }
-            }
+            }*/
 
-            return std::move(p);
+            return p << es.unsafe_string(*p.stream_);
         }
 
         persist operator<<(std::ostream& os, const effect_string& es) {
@@ -555,7 +587,7 @@ namespace iro {
             /*static std::array<std::unordered_map<std::ostream*, std::vector<const char*>, effect_type_to_stream_hash_t, effect_type_to_stream_equals_t>,
                               number_of_effect_types> effect_type_to_stream_to_effect_stack_;*/
 
-            std::unordered_map<std::ostream*,
+            std::unordered_map<const std::ostream*,
                                std::vector<std::array<const char*, number_of_effect_types>>,
                                effect_type_to_stream_hash_t, effect_type_to_stream_equals_t> stream_to_stack_;
 
@@ -675,18 +707,23 @@ namespace iro {
                 set(stream, stream_to_stack_.at(stream).size()-1, type, code);
             }
 
-            void reapply_top(std::ostream* stream, effect_type type) {
+            const char* get_top_code(const std::ostream* stream, effect_type type) {
                 if(!stream_to_stack_.count(stream)) { // I'm using c++14, so .contains() isn't available :(
-                    stream_to_stack_.at(stream).push_back(filled_array<const char*>(nullptr));
+                    stream_to_stack_.at(stream).push_back(effect_type_to_default_code_);
                 }
                 auto& stack = stream_to_stack_.at(stream);
 
                 for(unsigned i = stack.size(); i > 0; --i) {
                     if(stack[i-1][type]) { // find first code that isn't null
-                        *stream << stack[i-1][type];
-                        break;
+                        return stack[i-1][type];
                     }
                 }
+
+                assert(false);
+            }
+
+            void reapply_top(std::ostream* stream, effect_type type) {
+                *stream << get_top_code(stream, type);
 
                 /*if(stream_to_stack_.count(stream)) {
                     for(const auto& e : stream_to_stack_.at(stream).back()) {

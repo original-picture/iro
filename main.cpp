@@ -56,18 +56,36 @@ int main() {
 
     std::cout << "normal\n";*/
 
+/*
+    std::cout << "normal\n";
     {
         auto p0 = std::cout << bright_green;
         std::cout << "green\n";
 
         {
-            auto p1 = std::cout << bright_red;
-            std::cout << "red\n";
-            p0 = std::move(p1);
-        }
+            auto p1 = std::cout << bold;
+            std::cout << "green and bold\n";
 
-        std::cout << "red\n";
+            p0 << bright_blue;
+            std::cout << "blue and bold\n";
+        }
+        std::cout << "blue\n";
+
     }
     std::cout << "normal\n";
+    */
+
+    auto str = effect_string(normal_weight, "green\n");
+    str += effect_string(red, "red and bold\n");
+
+    auto e = bright_green|bold;
+
+    auto p0 = std::cout << e;
+
+    std::cout << "green and bold\n";
+
+    std::cout << str.unsafe_string(std::cout);
+
+    std::cout << "green and bold\n";
 
 }
