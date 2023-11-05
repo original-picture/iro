@@ -75,6 +75,7 @@ int main() {
     std::cout << "normal\n";
     */
 
+    /*
     auto str = effect_string(normal_weight, "green\n");
     str += effect_string(red, "red and bold\n");
 
@@ -86,6 +87,28 @@ int main() {
 
     std::cout << str.unsafe_string(std::cout);
 
-    std::cout << "green and bold\n";
+    std::cout << "green and bold\n";*/
 
+    /*
+    {
+        auto p0 = std::cout << bright_green;
+        std::cout << "green\n";
+
+        persist p1(std::cout);
+        std::cout << "green\n";
+        {
+            auto p2 = std::cout << bright_red;
+            std::cout << "red\n";
+
+            p1 = std::move(p2);
+            std::cout << "what color?\n";
+        }
+
+        std::cout << "red\n";
+    }
+
+    std::cout << "normal\n";*/
+
+    std::cout << effect_string(bright_green|bold, "hi", 32.1f, '\n');
+    std::cout << "normal\n";
 }

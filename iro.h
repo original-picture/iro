@@ -8,10 +8,11 @@
 #include <vector>
 #include <cassert>
 
-#ifdef __unix__
+#if defined(__unix__) || defined(__unix) || defined(__APPLE__) || defined(__MACH__)
+    #define IRO_UNIX
     #include <unistd.h>
 #elif defined(_WIN32)
-
+    #define IRO_WINDOWS
 #endif
 
 namespace iro {
@@ -49,6 +50,7 @@ namespace iro {
 
 
     class effect;
+    class effect_set;
 
     namespace detail {
         effect create(const char* code, effect_type type) noexcept;
@@ -63,6 +65,9 @@ namespace iro {
         friend effect detail::create(const char* code, effect_type type) noexcept; // Make this private so that the user can't construct invalid effects
         friend class effect_set;
         friend class persist;
+
+        friend effect_set   operator|(const effect& e, const effect_set& es);
+        friend effect_set&& operator|(const effect& e, effect_set&& es);
     };
 
     ///  effects  ///
@@ -140,6 +145,9 @@ namespace iro {
         friend class persist;
         friend class effect_string;
 
+        friend effect_set   operator|(const effect& e, const effect_set& es);
+        friend effect_set&& operator|(const effect& e, effect_set&& es);
+
         friend unsigned detail::push_effects(std::ostream* stream, const effect_set& effects);
         friend void detail::set(std::ostream* stream, unsigned index, const effect_set& effects);
 
@@ -160,7 +168,9 @@ namespace iro {
         effect_set&& operator|=(const effect_set& rhs)&&;
     };
 
-    effect_set operator|(const effect& e1, const effect& e2);
+    effect_set   operator|(const effect& e1, const effect& e2);
+    effect_set   operator|(const effect& e, const effect_set& es);
+    effect_set&& operator|(const effect& e, effect_set&& es);
 
 
     namespace detail {
@@ -209,6 +219,9 @@ namespace iro {
             return std::move(*this);
         }
 
+        std::ostream& ostream();
+        const std::ostream& ostream() const;
+
         ~persist();
     };
 
@@ -227,7 +240,7 @@ namespace iro {
         };
         std::vector<string_and_effects> strings_;
 
-        template<typename T, typename...Ts>
+        template<typename T>
         void init_(std::stringstream& stream, const T& arg) {
             stream << arg;
         }
@@ -235,6 +248,7 @@ namespace iro {
         template<typename T, typename...Ts, std::enable_if_t<(sizeof...(Ts) > 0), bool> = true>
         void init_(std::stringstream& stream, const T& arg, const Ts&...args) {
             stream << arg;
+            init_(stream, args...);
         }
 
         friend persist   operator<<(std::ostream&, const effect_string&);
@@ -369,6 +383,25 @@ namespace iro {
             return {e1, e2};
         }
 
+        effect_set operator|(const effect& e, const effect_set& es) {
+            if(es.type_to_code_[e.type_]) {
+                return std::move(es);
+            }
+            else {
+                return es|e;
+            }
+        }
+
+        effect_set&& operator|(const effect& e, effect_set&& es) { // FIXME:
+            if(es.type_to_code_[e.type_]) {
+                return std::move(es);
+            }
+            else {
+                return std::move(es |= e);
+            }
+        }
+
+
         persist::persist(std::ostream& os) : stream_(&os) {
             location_in_stack_ = detail::push_empty_effect(stream_);
         }
@@ -421,9 +454,17 @@ namespace iro {
             return {stream, e};
         }
 
+        std::ostream& persist::ostream() {
+            return *stream_;
+        }
+
+        const std::ostream& persist::ostream() const {
+            return *stream_;
+        }
+
         persist::~persist() {
             if(location_in_stack_ != empty_persist_location) {
-                detail::pop_effect(stream_);
+                detail::pop_effect(stream_); // TODO: replace pop with a delete function that takes an index too
             }
         }
 
@@ -534,14 +575,14 @@ namespace iro {
                 return arr;
             }
 
-            #ifdef __unix__
+            #ifdef IRO_UNIX
                 bool stdout_isatty() {
                     return isatty(STDOUT_FILENO);
                 }
                 bool stderr_isatty() {
                     return isatty(STDERR_FILENO);
                 }
-            #elif defined(_WIN32)
+            #elif defined(IRO_WINDOWS)
 
             #endif
 
@@ -693,7 +734,8 @@ namespace iro {
 
             void set(std::ostream* stream, unsigned index, const effect_set& effects) {
                 for(unsigned i = 0; i < effects.type_to_code_.size(); ++i) {
-                    if(effects.type_to_code_[i]) {
+                    if(effects.type_to_code_[i]) { // TODO: In order to have this work with persist assignment operators, you'll have to change this so that when the code is empty,
+                                                   // it cleans up the old persists state. This will involve walking down the stack and finding the last non-empty code for the given effect type
                         set(stream, index, static_cast<effect_type>(i), effects.type_to_code_[i]);
                     }
                 }
