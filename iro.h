@@ -174,9 +174,15 @@ namespace iro {
 
 
     namespace detail {
+        struct effect_entry_t {
+            bool is_empty; // I'm not a huge fan of there being two distinct empty states, but I can't think of another way to implement the behavior I want
+            bool is_destructed;
+            std::array<const char*, number_of_effect_types> type_to_code;
+        };
         unsigned push_effect(std::ostream* stream, effect_type type, const char* code);
-        unsigned push_empty_effect(std::ostream* stream);
+        unsigned push_empty_effect(std::ostream* stream); // TODO: change all instances of effect in function names to persist, because now all effects are bundled into one entry in the stack
         void pop_effect(std::ostream* stream);
+        void delete_persist(std::ostream* stream, unsigned index_in_stack);
         void set(std::ostream* stream, unsigned index, effect_type type, const char* code);
         void set_top(std::ostream* stream, effect_type type, const char* code);
         const char* get_top_code(const std::ostream* stream, effect_type type);
@@ -706,6 +712,16 @@ namespace iro {
                 /*if(stack.size() == 1) {
                     map.erase(&stream);
                 }*/
+            }
+
+            void delete_persist(std::ostream* stream, unsigned index_in_stack) {
+                auto& stack = stream_to_stack_.at(stream);
+
+                if(index_in_stack == stack.size()-1) {
+                    unsigned i = stack.size();
+
+                    while((--i >= 0) && (stack[i][0]))
+                }
             }
 
             void set(std::ostream* stream, unsigned index, effect_type type, const char* code) {
