@@ -174,11 +174,6 @@ namespace iro {
 
 
     namespace detail {
-        struct effect_entry_t {
-            bool is_empty; // I'm not a huge fan of there being two distinct empty states, but I can't think of another way to implement the behavior I want
-            bool is_destructed;
-            std::array<const char*, number_of_effect_types> type_to_code;
-        };
         unsigned push_effect(std::ostream* stream, effect_type type, const char* code);
         unsigned push_empty_effect(std::ostream* stream); // TODO: change all instances of effect in function names to persist, because now all effects are bundled into one entry in the stack
         void pop_effect(std::ostream* stream);
@@ -470,7 +465,7 @@ namespace iro {
 
         persist::~persist() {
             if(location_in_stack_ != empty_persist_location) {
-                detail::pop_effect(stream_); // TODO: replace pop with a delete function that takes an index too
+                detail::delete_persist(stream_, location_in_stack_); // TODO: replace pop with a delete function that takes an index too
             }
         }
 
@@ -634,8 +629,18 @@ namespace iro {
             /*static std::array<std::unordered_map<std::ostream*, std::vector<const char*>, effect_type_to_stream_hash_t, effect_type_to_stream_equals_t>,
                               number_of_effect_types> effect_type_to_stream_to_effect_stack_;*/
 
+            struct effect_entry_t {
+                std::array<const char*, number_of_effect_types> type_to_code;
+                bool is_empty = false; // I'm not a huge fan of there being two distinct empty states, but I can't think of another way to implement the behavior I want
+                bool is_destructed = false;
+
+                static effect_entry_t create_empty() {
+                    return {filled_array<const char*>(nullptr), true};
+                }
+            };
+
             std::unordered_map<const std::ostream*,
-                               std::vector<std::array<const char*, number_of_effect_types>>,
+                               std::vector<effect_entry_t>,
                                effect_type_to_stream_hash_t, effect_type_to_stream_equals_t> stream_to_stack_;
 
             static std::array<const char*, number_of_effect_types> effect_type_to_default_code_ = {"\x1b[39m",
@@ -656,11 +661,11 @@ namespace iro {
 
             unsigned push_empty_effect(std::ostream* stream) {
                 if(!stream_to_stack_.count(stream)) { // I'm using c++14, so .contains() isn't available :(
-                    stream_to_stack_[stream].push_back(effect_type_to_default_code_);
+                    stream_to_stack_[stream].push_back({effect_type_to_default_code_});
                 }
                 auto& stack = stream_to_stack_.at(stream);
                 unsigned ret = stack.size();
-                stack.push_back(filled_array<const char*>(nullptr));
+                stack.push_back(effect_entry_t::create_empty());
 
                 return ret;
             }
@@ -676,7 +681,7 @@ namespace iro {
                 return ret;
             }
 
-            void pop_effect(std::ostream* stream) {
+            /*void pop_effect(std::ostream* stream) {
                 auto& stack = stream_to_stack_.at(stream);
                 stack.pop_back();
 
@@ -712,25 +717,47 @@ namespace iro {
                 /*if(stack.size() == 1) {
                     map.erase(&stream);
                 }*/
-            }
+            //}
 
             void delete_persist(std::ostream* stream, unsigned index_in_stack) {
                 auto& stack = stream_to_stack_.at(stream);
 
+                stack[index_in_stack].is_destructed = true;
+
                 if(index_in_stack == stack.size()-1) {
                     unsigned i = stack.size();
 
-                    while((--i >= 0) && (stack[i][0]))
+                    while((i > 0) && (stack[i-1].is_destructed)) { // pop all already-destructed persists
+                        stack.pop_back();                          // note that we can't pop empty (default constructed) persists, because they're still valid and could be assigned to at any time
+
+                        --i;
+                    }
+                }
+
+                for(unsigned effect_type_index = 0; effect_type_index < number_of_effect_types; ++effect_type_index) {
+                    auto top_code = get_top_code(stream, static_cast<effect_type>(effect_type_index));
+                    *stream << top_code;
+                    if(stdout_isatty() && stderr_isatty()) { // TODO: put this in a function to get rid of code duplication
+                        for(unsigned i = 0; i < 2; ++i) {
+                            if(stream == streams_[i]) {
+                                *streams_[!i] << top_code;
+                                break;
+                            }               // ^ !i turns 0 into 1 and 1 into 0,
+                                            // so this basically says "if the stream is cout, also print this effect to cerr,
+                                            // and if the stream is cerr, also print this effect to cout
+                        }
+                    }
                 }
             }
 
             void set(std::ostream* stream, unsigned index, effect_type type, const char* code) {
                 auto& stack = stream_to_stack_.at(stream);
-                stack[index][type] = code;
+                stack[index].type_to_code[type] = code;
+                stack[index].is_empty = false;
 
                 bool is_top_non_empty = true;
                 for(unsigned i = index+1; i < stack.size(); ++i) {
-                    is_top_non_empty &= !(stack[i][type]);
+                    is_top_non_empty &= !(stack[i].type_to_code[type]);
                 }
                 if(is_top_non_empty) {
                     *stream << code;
@@ -758,22 +785,23 @@ namespace iro {
             }
 
             bool persist_has_effect_of_type(std::ostream* stream, unsigned index, effect_type type) {
-                return stream_to_stack_.at(stream)[index][type];
+                return stream_to_stack_.at(stream)[index].type_to_code[type];
             }
 
             void set_top(std::ostream* stream, effect_type type, const char* code) {
                 set(stream, stream_to_stack_.at(stream).size()-1, type, code);
             }
 
+            // TODO: maybe change this function so that it just takes a stream and returns a single string with all effect codes
             const char* get_top_code(const std::ostream* stream, effect_type type) {
                 if(!stream_to_stack_.count(stream)) { // I'm using c++14, so .contains() isn't available :(
-                    stream_to_stack_.at(stream).push_back(effect_type_to_default_code_);
+                    stream_to_stack_.at(stream).push_back({effect_type_to_default_code_});
                 }
                 auto& stack = stream_to_stack_.at(stream);
 
                 for(unsigned i = stack.size(); i > 0; --i) {
-                    if(stack[i-1][type]) { // find first code that isn't null
-                        return stack[i-1][type];
+                    if(stack[i-1].type_to_code[type]) { // find first code that isn't null
+                        return stack[i-1].type_to_code[type];
                     }
                 }
 

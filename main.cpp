@@ -56,7 +56,7 @@ int main() {
 
     std::cout << "normal\n";*/
 
-/*
+
     std::cout << "normal\n";
     {
         auto p0 = std::cout << bright_green;
@@ -73,7 +73,7 @@ int main() {
 
     }
     std::cout << "normal\n";
-    */
+
 
     /*
     auto str = effect_string(normal_weight, "green\n");
@@ -109,6 +109,6 @@ int main() {
 
     std::cout << "normal\n";*/
 
-    std::cout << effect_string(bright_green|bold, "hi", 32.1f, '\n');
-    std::cout << "normal\n";
+    /*std::cout << effect_string(bright_green|bold, "hi", 32.1f, '\n');
+    std::cout << "normal\n";*/
 }
