@@ -155,6 +155,8 @@ int main() {
             {
                 persist p2 = p0;
                 std::cout << "green and bold\n";
+
+                std::cout << "normal text " << effect_string(bright_blue, "blue") << " normal text\n";
             }
             std::cout << "red\n";
         }

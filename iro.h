@@ -1,7 +1,6 @@
 #pragma once
 
 #include <unordered_map>
-#include <stack>
 #include <array>
 #include <ostream>
 #include <sstream>
@@ -13,6 +12,8 @@
     #include <unistd.h>
 #elif defined(_WIN32)
     #define IRO_WINDOWS
+    #include <cstdio>
+    #include <io.h>
 #endif
 
 namespace iro {
@@ -94,14 +95,14 @@ namespace iro {
         /// /foreground colors  ///
 
         ///  background colors  ///
-            const effect background_black          = detail::create("\x1b[40m", background_color);
-            const effect background_red            = detail::create("\x1b[41m", background_color);
-            const effect background_green          = detail::create("\x1b[42m", background_color);
-            const effect background_yellow         = detail::create("\x1b[43m", background_color);
-            const effect background_blue           = detail::create("\x1b[44m", background_color);
-            const effect background_magenta        = detail::create("\x1b[45m", background_color);
-            const effect background_cyan           = detail::create("\x1b[46m", background_color);
-            const effect background_white          = detail::create("\x1b[47m", background_color);
+            const effect background_black          = detail::create("\x1b[40m",  background_color);
+            const effect background_red            = detail::create("\x1b[41m",  background_color);
+            const effect background_green          = detail::create("\x1b[42m",  background_color);
+            const effect background_yellow         = detail::create("\x1b[43m",  background_color);
+            const effect background_blue           = detail::create("\x1b[44m",  background_color);
+            const effect background_magenta        = detail::create("\x1b[45m",  background_color);
+            const effect background_cyan           = detail::create("\x1b[46m",  background_color);
+            const effect background_white          = detail::create("\x1b[47m",  background_color);
 
             const effect background_bright_black   = detail::create("\x1b[100m", background_color);
                 const effect& background_gray = bright_black;
@@ -598,7 +599,12 @@ namespace iro {
                     return isatty(STDERR_FILENO);
                 }
             #elif defined(IRO_WINDOWS)
-
+                bool stdout_isatty() {
+                    return _isatty(_fileno(stdout));
+                }
+                bool stderr_isatty() {
+                    return _isatty(_fileno(stderr));
+                }
             #endif
 
             bool isatty(const std::ostream& os) {
@@ -658,7 +664,8 @@ namespace iro {
             //  Simple space-time tradeoff
 
             struct stack_and_top_nonempty_location {
-                
+                std::vector<effect_entry_t> stack;
+                std::array<unsigned, number_of_effect_types> top_nonempty_location;
             };
 
             static std::unordered_map<const std::ostream*,
@@ -743,7 +750,6 @@ namespace iro {
 
             unsigned copy_persist(std::ostream* stream, unsigned index_in_stack) {
                 auto& stack = stream_to_stack_.at(stream);
-                assert(!stack[index_in_stack].is_destructed);
                 return push_effects(stream, {stack[index_in_stack].type_to_code}); // push calls set, which takes care of setting is_empty, so we don't have to copy it from the old persist's entry manually
             }
 
@@ -795,9 +801,9 @@ namespace iro {
                             if(stream == streams_[i]) {
                                 *streams_[!i] << code;
                                 break;
-                            }               // ^ !i turns 0 into 1 and 1 into 0,
-                                            // so this basically says "if the stream is cout, also print this effect to cerr,
-                                            // and if the stream is cerr, also print this effect to cout
+                            }          // ^ !i turns 0 into 1 and 1 into 0,
+                                       // so this basically says "if the stream is cout, also print this effect to cerr,
+                                       // and if the stream is cerr, also print this effect to cout
                         }
                     }
                 }
