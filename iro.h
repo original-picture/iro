@@ -138,6 +138,7 @@ namespace iro {
     namespace detail{
         unsigned push_effects(std::ostream* stream, const effect_set& effects);
         void set(std::ostream* stream, unsigned index, const effect_set& effects);
+        unsigned copy_persist(std::ostream* stream, unsigned index_in_stack);
     }
     class effect_set {
         std::array<const char*, number_of_effect_types> type_to_code_;
@@ -150,6 +151,10 @@ namespace iro {
 
         friend unsigned detail::push_effects(std::ostream* stream, const effect_set& effects);
         friend void detail::set(std::ostream* stream, unsigned index, const effect_set& effects);
+
+        friend unsigned detail::copy_persist(std::ostream* stream, unsigned index_in_stack);
+
+        effect_set(const std::array<const char*, number_of_effect_types>& type_to_code);
 
     public:
         effect_set();
@@ -205,11 +210,11 @@ namespace iro {
         persist(std::ostream& os, const effect& e);
         persist(std::ostream& os, const effect_set& e);
 
-        persist(persist&& other);
-        persist& operator=(persist&& rhs);
+        persist(persist&& other) noexcept;
+        persist& operator=(persist&& rhs) noexcept;
 
-        persist(const persist&) = delete;
-        persist& operator=(const persist&) = delete;
+        persist(const persist& other);
+        persist& operator=(const persist& rhs);
 
         persist&& operator<<(const effect& e);
         persist&& operator<<(const effect_set& es);
@@ -319,6 +324,8 @@ namespace iro {
     #ifdef IRO_IMPL
         effect::effect(const char* code, effect_type type) noexcept : code_(code), type_(type) {}
 
+        effect_set::effect_set(const std::array<const char*, number_of_effect_types>& type_to_code) : type_to_code_(type_to_code) {}
+
         effect_set::effect_set() {
             type_to_code_.fill(nullptr);
         }
@@ -415,19 +422,26 @@ namespace iro {
             location_in_stack_ = detail::push_effects(stream_, e);
         }
 
-        persist::persist(persist&& other) {
+        persist::persist(persist&& other) noexcept {
             stream_ = other.stream_;
+            other.stream_ = nullptr;
 
             location_in_stack_ = other.location_in_stack_;
             other.location_in_stack_ = 0;
         }
 
-        persist& persist::operator=(persist&& rhs) {
-            stream_ = rhs.stream_;
-
+        persist& persist::operator=(persist&& rhs) noexcept {
+            std::swap(stream_, rhs.stream_);
             std::swap(location_in_stack_, rhs.location_in_stack_);
 
             return *this;
+        }
+
+        persist::persist(const persist& other) : stream_(other.stream_),
+                                                 location_in_stack_(detail::copy_persist(other.stream_, other.location_in_stack_)) {}
+
+        persist& persist::operator=(const persist& rhs) {
+            return (*this = persist(rhs));
         }
 
         persist&& persist::operator<<(const effect& e) {
@@ -639,9 +653,17 @@ namespace iro {
                 }
             };
 
-            std::unordered_map<const std::ostream*,
-                               std::vector<effect_entry_t>,
-                               effect_type_to_stream_hash_t, effect_type_to_stream_equals_t> stream_to_stack_;
+            // TODO: write a struct that contains the stack and an array of uints that point to the top non-empty location for each effect type.
+            //  That way you don't have to iterate down from the top of the stack every time you want to find the top non-empty location.
+            //  Simple space-time tradeoff
+
+            struct stack_and_top_nonempty_location {
+                
+            };
+
+            static std::unordered_map<const std::ostream*,
+                                      std::vector<effect_entry_t>,
+                                      effect_type_to_stream_hash_t, effect_type_to_stream_equals_t> stream_to_stack_;
 
             static std::array<const char*, number_of_effect_types> effect_type_to_default_code_ = {"\x1b[39m",
                                                                                                    "\x1b[49m",
@@ -718,6 +740,12 @@ namespace iro {
                     map.erase(&stream);
                 }*/
             //}
+
+            unsigned copy_persist(std::ostream* stream, unsigned index_in_stack) {
+                auto& stack = stream_to_stack_.at(stream);
+                assert(!stack[index_in_stack].is_destructed);
+                return push_effects(stream, {stack[index_in_stack].type_to_code}); // push calls set, which takes care of setting is_empty, so we don't have to copy it from the old persist's entry manually
+            }
 
             void delete_persist(std::ostream* stream, unsigned index_in_stack) {
                 auto& stack = stream_to_stack_.at(stream);

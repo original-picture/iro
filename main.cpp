@@ -56,7 +56,7 @@ int main() {
 
     std::cout << "normal\n";*/
 
-
+/*
     std::cout << "normal\n";
     {
         auto p0 = std::cout << bright_green;
@@ -73,7 +73,7 @@ int main() {
 
     }
     std::cout << "normal\n";
-
+    */
 
     /*
     auto str = effect_string(normal_weight, "green\n");
@@ -111,4 +111,56 @@ int main() {
 
     /*std::cout << effect_string(bright_green|bold, "hi", 32.1f, '\n');
     std::cout << "normal\n";*/
+
+    /*auto p0 = std::cout << bright_green;
+    std::cout << "green\n";
+
+    auto p1 = std::cout << bold;
+    std::cout << "green and bold\n";
+
+    p0 << bright_red;
+    std::cout << "red and bold\n";
+
+    {
+        auto p2 = std::cout << bright_blue;
+        std::cout << "blue and bold\n";
+
+        p0 << bright_green;
+        std::cout << "blue and bold\n";
+    }
+
+    std::cout << "green and bold\n";*/
+
+    /*{
+        auto p0 = std::cout << bright_green;
+        std::cout << "green\n";
+
+        persist p1(std::cout);
+        std::cout << "green\n";
+
+        p1 = std::cout << bright_red;
+        std::cout << "red\n";
+    }
+
+    std::cout << "normal\n";*/
+
+    {
+        auto p0 = std::cout << bright_green << bold;
+        std::cout << "green and bold\n";
+
+        {
+            auto p1 = std::cout << normal_weight << bright_red;
+            std::cout << "red\n";
+
+            {
+                persist p2 = p0;
+                std::cout << "green and bold\n";
+            }
+            std::cout << "red\n";
+        }
+
+        std::cout << "green and bold\n";
+    }
+    std::cout << "normal\n";
+
 }
