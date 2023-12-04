@@ -137,7 +137,7 @@ namespace iro {
 
     class effect_set;
     namespace detail{
-        unsigned push_effects(std::ostream* stream, const effect_set& effects);
+        unsigned push_persist(std::ostream* stream, const effect_set& effects);
         void set(std::ostream* stream, unsigned index, const effect_set& effects);
         unsigned copy_persist(std::ostream* stream, unsigned index_in_stack);
     }
@@ -150,7 +150,7 @@ namespace iro {
         friend effect_set   operator|(const effect& e, const effect_set& es);
         friend effect_set&& operator|(const effect& e, effect_set&& es);
 
-        friend unsigned detail::push_effects(std::ostream* stream, const effect_set& effects);
+        friend unsigned detail::push_persist(std::ostream* stream, const effect_set& effects);
         friend void detail::set(std::ostream* stream, unsigned index, const effect_set& effects);
 
         friend unsigned detail::copy_persist(std::ostream* stream, unsigned index_in_stack);
@@ -180,8 +180,8 @@ namespace iro {
 
 
     namespace detail {
-        unsigned push_effect(std::ostream* stream, effect_type type, const char* code);
-        unsigned push_empty_effect(std::ostream* stream); // TODO: change all instances of effect in function names to persist, because now all effects are bundled into one entry in the stack
+        unsigned push_persist(std::ostream* stream, effect_type type, const char* code);
+        unsigned push_empty_persist(std::ostream* stream); // TODO: change all instances of effect in function names to persist, because now all effects are bundled into one entry in the stack
         void pop_effect(std::ostream* stream);
         void delete_persist(std::ostream* stream, unsigned index_in_stack);
         void set(std::ostream* stream, unsigned index, effect_type type, const char* code);
@@ -229,6 +229,8 @@ namespace iro {
         std::ostream& ostream();
         const std::ostream& ostream() const;
 
+        void delete_early();
+
         ~persist();
     };
 
@@ -239,10 +241,10 @@ namespace iro {
     class effect_string {
         struct string_and_effects {
             std::string string;
-            std::array<bool, number_of_effect_types> active_effects_;
+            std::array<bool, number_of_effect_types> active_effects;
 
             inline string_and_effects() {
-                active_effects_.fill(false);
+                active_effects.fill(false);
             }
         };
         std::vector<string_and_effects> strings_;
@@ -273,7 +275,7 @@ namespace iro {
                 if(e) {
                     strings_.resize(1);
                     stream << e;
-                    strings_.back().active_effects_[i] = true;
+                    strings_.back().active_effects[i] = true;
                 }
             }
             init_(stream, arg, args...);
@@ -412,15 +414,15 @@ namespace iro {
 
 
         persist::persist(std::ostream& os) : stream_(&os) {
-            location_in_stack_ = detail::push_empty_effect(stream_);
+            location_in_stack_ = detail::push_empty_persist(stream_);
         }
 
         persist::persist(std::ostream& os, const effect& e) : stream_(&os) {
-            location_in_stack_ = detail::push_effect(stream_, e.type_, e.code_);
+            location_in_stack_ = detail::push_persist(stream_, e.type_, e.code_);
         }
 
         persist::persist(std::ostream& os, const effect_set& e) : stream_(&os) {
-            location_in_stack_ = detail::push_effects(stream_, e);
+            location_in_stack_ = detail::push_persist(stream_, e);
         }
 
         persist::persist(persist&& other) noexcept {
@@ -447,12 +449,7 @@ namespace iro {
 
         persist&& persist::operator<<(const effect& e) {
             detail::set(stream_, location_in_stack_, e.type_, e.code_);
-            /*if(detail::persist_has_effect_of_type(stream_, location_in_stack_, e.type_)) {
-                detail::set_top(stream_, e.type_, e.code_);
-            }
-            else {
-                location_in_stack_ = detail::push_effect(stream_, e.type_, e.code_);
-            }*/
+
             return std::move(*this);
         }
 
@@ -478,10 +475,16 @@ namespace iro {
             return *stream_;
         }
 
-        persist::~persist() {
+        void persist::delete_early() {
             if(location_in_stack_ != empty_persist_location) {
-                detail::delete_persist(stream_, location_in_stack_); // TODO: replace pop with a delete function that takes an index too
+                detail::delete_persist(stream_, location_in_stack_);
             }
+            location_in_stack_ = empty_persist_location;
+        }
+
+
+        persist::~persist() {
+            delete_early();
         }
 
         effect_string::string_and_effects& effect_string::back_() {
@@ -524,8 +527,8 @@ namespace iro {
             for(const auto& string : strings_) {
                 ret += string.string;
 
-                for(unsigned i = 0; i < string.active_effects_.size(); ++i) {
-                    if(string.active_effects_[i]) {
+                for(unsigned i = 0; i < string.active_effects.size(); ++i) {
+                    if(string.active_effects[i]) {
                         ret += detail::get_top_code(&stream, static_cast<effect_type>(i));
                     }
                 }
@@ -535,17 +538,6 @@ namespace iro {
         }
 
         persist&& operator<<(persist& p, const effect_string& es) {
-/*
-            for(const auto& string : es.strings_) {
-                p << string.string;
-
-                for(unsigned i = 0; i < string.active_effects_.size(); ++i) {
-                    if(string.active_effects_[i]) {
-                        detail::reapply_top(p.stream_, static_cast<effect_type>(i));
-                    }
-                }
-            }*/
-
             return p << es.unsafe_string(*p.stream_);
         }
 
@@ -645,10 +637,6 @@ namespace iro {
                 }
             };
 
-                                                                            // the code
-            /*static std::array<std::unordered_map<std::ostream*, std::vector<const char*>, effect_type_to_stream_hash_t, effect_type_to_stream_equals_t>,
-                              number_of_effect_types> effect_type_to_stream_to_effect_stack_;*/
-
             struct effect_entry_t {
                 std::array<const char*, number_of_effect_types> type_to_code;
                 bool is_empty = false; // I'm not a huge fan of there being two distinct empty states, but I can't think of another way to implement the behavior I want
@@ -681,14 +669,14 @@ namespace iro {
             static std::ostream* streams_[] = {&std::cout, &std::cerr};
 
             // returns location in map
-            unsigned push_effect(std::ostream* stream, effect_type type, const char* code) {
-                auto ret = push_empty_effect(stream);
+            unsigned push_persist(std::ostream* stream, effect_type type, const char* code) {
+                auto ret = push_empty_persist(stream);
                 set_top(stream, type, code);
 
                 return ret;
             }
 
-            unsigned push_empty_effect(std::ostream* stream) {
+            unsigned push_empty_persist(std::ostream* stream) {
                 if(!stream_to_stack_.count(stream)) { // I'm using c++14, so .contains() isn't available :(
                     stream_to_stack_[stream].push_back({effect_type_to_default_code_});
                 }
@@ -699,8 +687,8 @@ namespace iro {
                 return ret;
             }
 
-            unsigned push_effects(std::ostream* stream, const effect_set& effects) {
-                auto ret = push_empty_effect(stream);
+            unsigned push_persist(std::ostream* stream, const effect_set& effects) {
+                auto ret = push_empty_persist(stream);
                 for(unsigned i = 0; i < number_of_effect_types; ++i) {
                     if(effects.type_to_code_[i]) {
                         set_top(stream, static_cast<effect_type>(i), effects.type_to_code_[i]);
@@ -710,47 +698,9 @@ namespace iro {
                 return ret;
             }
 
-            /*void pop_effect(std::ostream* stream) {
-                auto& stack = stream_to_stack_.at(stream);
-                stack.pop_back();
-
-                for(unsigned effect_type_index = 0; effect_type_index < number_of_effect_types; ++effect_type_index) {
-                    for(unsigned index_in_stack = stack.size(); index_in_stack > 0; --index_in_stack) { // iterate backwards and find the first nonempty effect
-                        const auto& effect = stack[index_in_stack-1];
-                        const auto& e = effect[effect_type_index];
-                        if(e) { // don't apply a null code
-                            *stream << e;
-
-                            if(stdout_isatty() && stderr_isatty()) { // TODO: put this in a function to get rid of code duplication
-                                for(unsigned i = 0; i < 2; ++i) {
-                                    if(stream == streams_[i]) {
-                                        *streams_[!i] << e;
-                                        break;
-                                    }               // ^ !i turns 0 into 1 and 1 into 0,
-                                    // so this basically says "if the stream is cout, also print this effect to cerr,
-                                    // and if the stream is cerr, also print this effect to cout
-                                }
-                            }
-
-                            break;
-                        }
-                    }
-                }
-
-
-                /*else { no, what were you thinking???
-                 *         don't need to do this because the next effect will be popped automatically when it gets destroyed
-                    pop_effect(stream, type); // pop again because we didn't actually apply anything.
-                }                             // this cycle continues as many times as necessary*/
-
-                /*if(stack.size() == 1) {
-                    map.erase(&stream);
-                }*/
-            //}
-
             unsigned copy_persist(std::ostream* stream, unsigned index_in_stack) {
                 auto& stack = stream_to_stack_.at(stream);
-                return push_effects(stream, {stack[index_in_stack].type_to_code}); // push calls set, which takes care of setting is_empty, so we don't have to copy it from the old persist's entry manually
+                return push_persist(stream, {stack[index_in_stack].type_to_code}); // push calls set, which takes care of setting is_empty, so we don't have to copy it from the old persist's entry manually
             }
 
             void delete_persist(std::ostream* stream, unsigned index_in_stack) {
@@ -844,14 +794,6 @@ namespace iro {
 
             void reapply_top(std::ostream* stream, effect_type type) {
                 *stream << get_top_code(stream, type);
-
-                /*if(stream_to_stack_.count(stream)) {
-                    for(const auto& e : stream_to_stack_.at(stream).back()) {
-                        if(e) {
-                            *stream << e;
-                        }
-                    }
-                }*/
             }
         }
     #endif

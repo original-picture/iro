@@ -153,10 +153,16 @@ int main() {
             std::cout << "red\n";
 
             {
-                persist p2 = p0;
+                persist p3 = p0;
                 std::cout << "green and bold\n";
 
-                std::cout << "normal text " << effect_string(bright_blue, "blue") << " normal text\n";
+                {
+                    persist p2(std::cout);
+                    p2 = p1;
+                    std::cout << "red\n";
+                }
+
+                std::cout << "green and bold " << effect_string(bright_blue, "blue") << " green and bold\n";
             }
             std::cout << "red\n";
         }
