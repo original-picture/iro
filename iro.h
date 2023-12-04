@@ -84,7 +84,7 @@ namespace iro {
 
             const effect bright_black   = detail::create("\x1b[90m", foreground_color);
                 const effect& gray = bright_black;
-                const effect& grey = bright_black; // for the british people
+                const effect& grey = bright_black;
             const effect bright_red     = detail::create("\x1b[91m", foreground_color);
             const effect bright_green   = detail::create("\x1b[92m", foreground_color);
             const effect bright_yellow  = detail::create("\x1b[93m", foreground_color);
@@ -106,7 +106,7 @@ namespace iro {
 
             const effect background_bright_black   = detail::create("\x1b[100m", background_color);
                 const effect& background_gray = bright_black;
-                const effect& background_grey = bright_black; // for the british people
+                const effect& background_grey = bright_black;
             const effect background_bright_red     = detail::create("\x1b[101m", background_color);
             const effect background_bright_green   = detail::create("\x1b[102m", background_color);
             const effect background_bright_yellow  = detail::create("\x1b[103m", background_color);
@@ -311,8 +311,8 @@ namespace iro {
          * This function is unsafe because the conversion to an std::string embeds escape codes directly as character data.
          * This means that the escape codes to undo the effects are
          *
-         * You need to make absolutely sure that you don't modify any iro state between the call to unsafe_string and the resultant string being printed to tge given stream
-         * And (obviously), don't print the given
+         * You need to make absolutely sure that you don't modify any iro state between the call to unsafe_string and the resultant string being printed to the given stream
+         * And (obviously), don't print the returned string to a stream othere than the one you said you were going to print it to
          *
          * You should really only use this function if you need to interface with a different printing library
          *
