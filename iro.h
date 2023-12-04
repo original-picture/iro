@@ -70,67 +70,67 @@ namespace iro {
         friend effect_set   operator|(const effect& e, const effect_set& es);
         friend effect_set&& operator|(const effect& e, effect_set&& es);
     };
-
+    
     ///  effects  ///
         ///  foreground colors  ///
-            const effect black          = detail::create("\x1b[30m", foreground_color);
-            const effect red            = detail::create("\x1b[31m", foreground_color);
-            const effect green          = detail::create("\x1b[32m", foreground_color);
-            const effect yellow         = detail::create("\x1b[33m", foreground_color);
-            const effect blue           = detail::create("\x1b[34m", foreground_color);
-            const effect magenta        = detail::create("\x1b[35m", foreground_color);
-            const effect cyan           = detail::create("\x1b[36m", foreground_color);
-            const effect white          = detail::create("\x1b[37m", foreground_color);
+            extern const effect black          ;
+            extern const effect red            ;
+            extern const effect green          ;
+            extern const effect yellow         ;
+            extern const effect blue           ;
+            extern const effect magenta        ;
+            extern const effect cyan           ;
+            extern const effect white          ;
 
-            const effect bright_black   = detail::create("\x1b[90m", foreground_color);
-                const effect& gray = bright_black;
-                const effect& grey = bright_black;
-            const effect bright_red     = detail::create("\x1b[91m", foreground_color);
-            const effect bright_green   = detail::create("\x1b[92m", foreground_color);
-            const effect bright_yellow  = detail::create("\x1b[93m", foreground_color);
-            const effect bright_blue    = detail::create("\x1b[94m", foreground_color);
-            const effect bright_magenta = detail::create("\x1b[95m", foreground_color);
-            const effect bright_cyan    = detail::create("\x1b[96m", foreground_color);
-            const effect bright_white   = detail::create("\x1b[97m", foreground_color);
+            extern const effect bright_black   ;
+                extern const effect& gray ;
+                extern const effect& grey ;
+            extern const effect bright_red     ;
+            extern const effect bright_green   ;
+            extern const effect bright_yellow  ;
+            extern const effect bright_blue    ;
+            extern const effect bright_magenta ;
+            extern const effect bright_cyan    ;
+            extern const effect bright_white   ;
         /// /foreground colors  ///
 
         ///  background colors  ///
-            const effect background_black          = detail::create("\x1b[40m",  background_color);
-            const effect background_red            = detail::create("\x1b[41m",  background_color);
-            const effect background_green          = detail::create("\x1b[42m",  background_color);
-            const effect background_yellow         = detail::create("\x1b[43m",  background_color);
-            const effect background_blue           = detail::create("\x1b[44m",  background_color);
-            const effect background_magenta        = detail::create("\x1b[45m",  background_color);
-            const effect background_cyan           = detail::create("\x1b[46m",  background_color);
-            const effect background_white          = detail::create("\x1b[47m",  background_color);
+            extern const effect background_black          ;
+            extern const effect background_red            ;
+            extern const effect background_green          ;
+            extern const effect background_yellow         ;
+            extern const effect background_blue           ;
+            extern const effect background_magenta        ;
+            extern const effect background_cyan           ;
+            extern const effect background_white          ;
 
-            const effect background_bright_black   = detail::create("\x1b[100m", background_color);
-                const effect& background_gray = bright_black;
-                const effect& background_grey = bright_black;
-            const effect background_bright_red     = detail::create("\x1b[101m", background_color);
-            const effect background_bright_green   = detail::create("\x1b[102m", background_color);
-            const effect background_bright_yellow  = detail::create("\x1b[103m", background_color);
-            const effect background_bright_blue    = detail::create("\x1b[104m", background_color);
-            const effect background_bright_magenta = detail::create("\x1b[105m", background_color);
-            const effect background_bright_cyan    = detail::create("\x1b[106m", background_color);
-            const effect background_bright_white   = detail::create("\x1b[107m", background_color);
+            extern const effect background_bright_black   ;
+                extern const effect& background_gray ;
+                extern const effect& background_grey ;
+            extern const effect background_bright_red     ;
+            extern const effect background_bright_green   ;
+            extern const effect background_bright_yellow  ;
+            extern const effect background_bright_blue    ;
+            extern const effect background_bright_magenta ;
+            extern const effect background_bright_cyan    ;
+            extern const effect background_bright_white   ;
         /// /background colors  ///
 
         ///  font weight  ///
-            const effect bold          = detail::create("\x1b[1m",  font_weight);
-            const effect faint         = detail::create("\x1b[2m",  font_weight);
-            const effect normal_weight = detail::create("\x1b[22m", font_weight);
+            extern const effect bold          ;
+            extern const effect faint         ;
+            extern const effect normal_weight ;
         /// /font weight  ///
 
         /// underline  ///
-            const effect underlined     = detail::create("\x1b[4m",  underlinedness);
-                const effect& underline = underlined; // I can't decide whether to call this one underlined or underlineD, so I'll just let both be valid
-            const effect not_underlined = detail::create("\x1b[24m", underlinedness);
+            extern const effect underlined     ;
+                extern const effect& underline ; // I can't decide whether to call this one underlined or underlineD, so I'll just let both be valid
+            extern const effect not_underlined ;
         /// /underline  ///
 
         ///  blink  ///
-            const effect blinking     = detail::create("\x1b[5m",  blink);
-            const effect not_blinking = detail::create("\x1b[25m", blink);
+            extern const effect blinking     ;
+            extern const effect not_blinking ;
         /// /blink  ///
 
     /// /effects  ///
@@ -229,6 +229,9 @@ namespace iro {
         std::ostream& ostream();
         const std::ostream& ostream() const;
 
+        operator std::ostream&();
+        operator const std::ostream&() const;
+
         void delete_early();
 
         ~persist();
@@ -295,6 +298,7 @@ namespace iro {
             back_() += arg;
             return *this;
         }
+
         effect_string& operator+=(const effect_string& arg);
         effect_string& operator+=(effect_string&& arg);
 
@@ -326,6 +330,70 @@ namespace iro {
 
     #ifdef IRO_IMPL
         effect::effect(const char* code, effect_type type) noexcept : code_(code), type_(type) {}
+        
+        ///  effects  ///
+            ///  foreground colors  ///
+                const effect black          = detail::create("\x1b[30m", foreground_color);
+                const effect red            = detail::create("\x1b[31m", foreground_color);
+                const effect green          = detail::create("\x1b[32m", foreground_color);
+                const effect yellow         = detail::create("\x1b[33m", foreground_color);
+                const effect blue           = detail::create("\x1b[34m", foreground_color);
+                const effect magenta        = detail::create("\x1b[35m", foreground_color);
+                const effect cyan           = detail::create("\x1b[36m", foreground_color);
+                const effect white          = detail::create("\x1b[37m", foreground_color);
+    
+                const effect bright_black   = detail::create("\x1b[90m", foreground_color);
+                    const effect& gray = bright_black;
+                    const effect& grey = bright_black;
+                const effect bright_red     = detail::create("\x1b[91m", foreground_color);
+                const effect bright_green   = detail::create("\x1b[92m", foreground_color);
+                const effect bright_yellow  = detail::create("\x1b[93m", foreground_color);
+                const effect bright_blue    = detail::create("\x1b[94m", foreground_color);
+                const effect bright_magenta = detail::create("\x1b[95m", foreground_color);
+                const effect bright_cyan    = detail::create("\x1b[96m", foreground_color);
+                const effect bright_white   = detail::create("\x1b[97m", foreground_color);
+            /// /foreground colors  ///
+    
+            ///  background colors  ///
+                const effect background_black          = detail::create("\x1b[40m",  background_color);
+                const effect background_red            = detail::create("\x1b[41m",  background_color);
+                const effect background_green          = detail::create("\x1b[42m",  background_color);
+                const effect background_yellow         = detail::create("\x1b[43m",  background_color);
+                const effect background_blue           = detail::create("\x1b[44m",  background_color);
+                const effect background_magenta        = detail::create("\x1b[45m",  background_color);
+                const effect background_cyan           = detail::create("\x1b[46m",  background_color);
+                const effect background_white          = detail::create("\x1b[47m",  background_color);
+    
+                const effect background_bright_black   = detail::create("\x1b[100m", background_color);
+                    const effect& background_gray = bright_black;
+                    const effect& background_grey = bright_black;
+                const effect background_bright_red     = detail::create("\x1b[101m", background_color);
+                const effect background_bright_green   = detail::create("\x1b[102m", background_color);
+                const effect background_bright_yellow  = detail::create("\x1b[103m", background_color);
+                const effect background_bright_blue    = detail::create("\x1b[104m", background_color);
+                const effect background_bright_magenta = detail::create("\x1b[105m", background_color);
+                const effect background_bright_cyan    = detail::create("\x1b[106m", background_color);
+                const effect background_bright_white   = detail::create("\x1b[107m", background_color);
+            /// /background colors  ///
+    
+            ///  font weight  ///
+                const effect bold          = detail::create("\x1b[1m",  font_weight);
+                const effect faint         = detail::create("\x1b[2m",  font_weight);
+                const effect normal_weight = detail::create("\x1b[22m", font_weight);
+            /// /font weight  ///
+    
+            /// underline  ///
+                const effect underlined     = detail::create("\x1b[4m",  underlinedness);
+                    const effect& underline = underlined; // I can't decide whether to call this one underlined or underlineD, so I'll just let both be valid
+                const effect not_underlined = detail::create("\x1b[24m", underlinedness);
+            /// /underline  ///
+    
+            ///  blink  ///
+                const effect blinking     = detail::create("\x1b[5m",  blink);
+                const effect not_blinking = detail::create("\x1b[25m", blink);
+            /// /blink  ///
+    
+        /// /effects  ///
 
         effect_set::effect_set(const std::array<const char*, number_of_effect_types>& type_to_code) : type_to_code_(type_to_code) {}
 
@@ -472,6 +540,14 @@ namespace iro {
         }
 
         const std::ostream& persist::ostream() const {
+            return *stream_;
+        }
+
+        persist::operator std::ostream&() {
+            return *stream_;
+        }
+
+        persist::operator const std::ostream&() const {
             return *stream_;
         }
 
@@ -779,7 +855,7 @@ namespace iro {
             // TODO: maybe change this function so that it just takes a stream and returns a single string with all effect codes
             const char* get_top_code(const std::ostream* stream, effect_type type) {
                 if(!stream_to_stack_.count(stream)) { // I'm using c++14, so .contains() isn't available :(
-                    stream_to_stack_.at(stream).push_back({effect_type_to_default_code_});
+                    stream_to_stack_[stream].push_back({effect_type_to_default_code_});
                 }
                 auto& stack = stream_to_stack_.at(stream);
 
