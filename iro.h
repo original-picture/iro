@@ -70,7 +70,7 @@ namespace iro {
         friend effect_set   operator|(const effect& e, const effect_set& es);
         friend effect_set&& operator|(const effect& e, effect_set&& es);
     };
-    
+
     ///  effects  ///
         ///  foreground colors  ///
             extern const effect black          ;
@@ -189,6 +189,39 @@ namespace iro {
         const char* get_top_code(const std::ostream* stream, effect_type type);
         void reapply_top(std::ostream* stream, effect_type type);
         bool persist_has_effect_of_type(std::ostream* stream, unsigned index, effect_type type);
+
+        template<typename T>
+        struct filled_array_helper_t {
+            const T& val;
+
+            filled_array_helper_t(const T& val) : val(val) {}
+
+            template<std::size_t N>
+            operator std::array<T,N>() {
+                std::array<T,N> ret;
+                ret.fill(val);
+                return ret;
+            }
+        };
+
+        template<typename T>
+        filled_array_helper_t<T> filled_array(const T& value) {
+            return filled_array_helper_t<T>(value);
+        }
+
+        template<std::size_t N, typename T>
+        std::array<T,N> filled_array(const T& value) {
+            std::array<T,N> ret;
+            ret.fill(value);
+            return ret;
+        }
+
+        template<std::size_t N, typename T, typename U>
+        std::array<T,N> fill_array_and_set_one_value(const T& fill_value, unsigned index, const U& set_value) {
+            auto arr = filled_array<T, N>(fill_value);
+            arr[index] = set_value;
+            return arr;
+        }
     }
 
 
@@ -294,8 +327,21 @@ namespace iro {
         effect_string& operator<<(effect_string&& arg);
 
         template<typename T, std::enable_if_t<(!std::is_same<T, effect_string>::value), bool> = true>
-        effect_string& operator+=(T& arg) {
-            back_() += arg;
+        effect_string& operator+=(T&& arg) {
+
+            std::stringstream sstream;
+            sstream << std::forward<T>(arg);
+
+            if(back_().active_effects == detail::filled_array<number_of_effect_types>(false)) {
+                back_().string += sstream.str();
+            }
+            else {
+                string_and_effects se;
+                se.string = sstream.str();
+
+                strings_.push_back(std::move(se));
+            }
+
             return *this;
         }
 
@@ -303,10 +349,16 @@ namespace iro {
         effect_string& operator+=(effect_string&& arg);
 
         template<typename T>
-        effect_string operator+(T& arg) {
+        effect_string operator+(T&& arg) const& {
             auto ret = *this;
-            ret += arg;
+            ret += std::forward<T>(arg);
             return ret;
+        }
+
+        template<typename T>
+        effect_string&& operator+(T&& arg)&& {
+            *this += std::forward<T>(arg);
+            return std::move(*this);
         }
 
         /**
@@ -575,16 +627,27 @@ namespace iro {
         }
 
         effect_string& effect_string::operator<<(const effect_string& arg) {
-            for(const auto& string : arg.strings_) {
-                strings_.push_back(string);
+            for(auto& string : arg.strings_) {
+                if(back_().active_effects == string.active_effects) {
+                    back_().string += string.string;
+                }
+                else {
+                    strings_.push_back(std::move(string));
+                }
             }
 
             return *this;
         }
 
         effect_string& effect_string::operator<<(effect_string&& arg) {
+
             for(auto& string : arg.strings_) {
-                strings_.push_back(std::move(string));
+                if(back_().active_effects == string.active_effects) {
+                    back_().string += std::move(string.string);
+                }
+                else {
+                    strings_.push_back(std::move(string));
+                }
             }
 
             return *this;
@@ -626,39 +689,6 @@ namespace iro {
         }
 
         namespace detail {
-            template<typename T>
-            struct filled_array_helper_t {
-                const T& val;
-
-                filled_array_helper_t(const T& val) : val(val) {}
-
-                template<std::size_t N>
-                operator std::array<T,N>() {
-                    std::array<T,N> ret;
-                    ret.fill(val);
-                    return ret;
-                }
-            };
-
-            template<typename T>
-            filled_array_helper_t<T> filled_array(const T& value) {
-                return filled_array_helper_t<T>(value);
-            }
-
-            template<std::size_t N, typename T>
-            std::array<T,N> filled_array(const T& value) {
-                std::array<T,N> ret;
-                ret.fill(value);
-                return ret;
-            }
-
-            template<std::size_t N, typename T, typename U>
-            std::array<T,N> fill_array_and_set_one_value(const T& fill_value, unsigned index, const U& set_value) {
-                auto arr = filled_array<T, N>(fill_value);
-                arr[index] = set_value;
-                return arr;
-            }
-
             #ifdef IRO_UNIX
                 bool stdout_isatty() {
                     return isatty(STDOUT_FILENO);
