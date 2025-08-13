@@ -1,7 +1,7 @@
 # Iro
-Iro is a header-only C++14 library for printing text with color and other effects achievable with [ANSI escape sequences](https://en.wikipedia.org/wiki/ANSI_escape_code)
+Iro is a header-only C++14 library for printing text with color and other terminal effects  
 Its defining feature is that it uses [RAII](https://en.wikipedia.org/wiki/Resource_acquisition_is_initialization) to automatically reset terminal effects, 
-so unlike other fancy printing libraries, you don't have to remember to call some `reset()` function to return the terminal to its normal state
+so unlike other fancy printing libraries, you don't have to remember to call some `reset()` function in order to return the terminal to its normal state
 
 ## Example
 This code is copy-pasted from [basic_example.cpp](./basic_example.cpp):
@@ -17,6 +17,7 @@ std::cout << iro::bright_blue << "this text is blue\n"; // automatically resets 
 std::cout << "this text is normal\n";
 
     {
+        // the blue effect will be automatically reset when tsg is destroyed
         iro::terminal_state_guard tsg = std::cout << iro::bright_blue << "  this text is blue\n";
         std::cout << "  this text is still blue\n";
 
@@ -27,12 +28,12 @@ std::cout << "this text is normal\n";
             {
                 iro::terminal_state_guard tsg2 = std::cout << iro::bright_green;
                 std::cout << "      this text is green and still underlined\n";
-            }
+            } // tsg2 destroyed
             std::cout << "    this text is red and underlined again\n";
-        }
+        } // tsg1 destroyed
         std::cout << "  this text is blue again\n";
 
-    }
+    } // tsg destroyed
     std::cout << "this text is normal again\n";
 }
 ```
