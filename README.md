@@ -62,8 +62,8 @@ cmake --build .
 
 ## Features
 * supported effect types
-  * foreground_color (16 colors)
-  * background_color (16 colors)
+  * foreground color (16 colors)
+  * background color (16 colors)
   * font_weight 
     * bold
     * faint
