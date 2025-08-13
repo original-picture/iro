@@ -1,11 +1,9 @@
 #pragma once
 
-#include <unordered_map>
 #include <array>
 #include <ostream>
 #include <sstream>
 #include <vector>
-#include <cassert>
 
 #if defined(__unix__) || defined(__unix) || defined(__APPLE__) || defined(__MACH__)
     #define IRO_UNIX
@@ -65,7 +63,7 @@ namespace iro {
 
         friend effect detail::create(const char* code, effect_type type) noexcept; // Make this private so that the user can't construct invalid effects
         friend class effect_set;
-        friend class persist;
+        friend class terminal_state_guard;
 
         friend effect_set   operator|(const effect& e, const effect_set& es);
         friend effect_set&& operator|(const effect& e, effect_set&& es);
@@ -124,7 +122,6 @@ namespace iro {
 
         /// underline  ///
             extern const effect underlined     ;
-                extern const effect& underline ; // I can't decide whether to call this one underlined or underlineD, so I'll just let both be valid
             extern const effect not_underlined ;
         /// /underline  ///
 
@@ -137,23 +134,23 @@ namespace iro {
 
     class effect_set;
     namespace detail{
-        unsigned push_persist(std::ostream* stream, const effect_set& effects);
+        unsigned push_state_guard(std::ostream* stream, const effect_set& effects);
         void set(std::ostream* stream, unsigned index, const effect_set& effects);
-        unsigned copy_persist(std::ostream* stream, unsigned index_in_stack);
+        unsigned copy_state_guard(std::ostream* stream, unsigned index_in_stack);
     }
     class effect_set {
         std::array<const char*, number_of_effect_types> type_to_code_;
 
-        friend class persist;
+        friend class terminal_state_guard;
         friend class effect_string;
 
         friend effect_set   operator|(const effect& e, const effect_set& es);
         friend effect_set&& operator|(const effect& e, effect_set&& es);
 
-        friend unsigned detail::push_persist(std::ostream* stream, const effect_set& effects);
+        friend unsigned detail::push_state_guard(std::ostream* stream, const effect_set& effects);
         friend void detail::set(std::ostream* stream, unsigned index, const effect_set& effects);
 
-        friend unsigned detail::copy_persist(std::ostream* stream, unsigned index_in_stack);
+        friend unsigned detail::copy_state_guard(std::ostream* stream, unsigned index_in_stack);
 
         effect_set(const std::array<const char*, number_of_effect_types>& type_to_code);
 
@@ -180,15 +177,15 @@ namespace iro {
 
 
     namespace detail {
-        unsigned push_persist(std::ostream* stream, effect_type type, const char* code);
-        unsigned push_empty_persist(std::ostream* stream); // TODO: change all instances of effect in function names to persist, because now all effects are bundled into one entry in the stack
+        unsigned push_state_guard(std::ostream* stream, effect_type type, const char* code);
+        unsigned push_empty_state_guard(std::ostream* stream); // TODO: change all instances of effect in function names to state guard, because now all effects are bundled into one entry in the stack
         void pop_effect(std::ostream* stream);
-        void delete_persist(std::ostream* stream, unsigned index_in_stack);
+        void delete_state_guard(std::ostream* stream, unsigned index_in_stack);
         void set(std::ostream* stream, unsigned index, effect_type type, const char* code);
         void set_top(std::ostream* stream, effect_type type, const char* code);
         const char* get_top_code(const std::ostream* stream, effect_type type);
         void reapply_top(std::ostream* stream, effect_type type);
-        bool persist_has_effect_of_type(std::ostream* stream, unsigned index, effect_type type);
+        bool state_guard_has_effect_of_type(std::ostream* stream, unsigned index, effect_type type);
 
         template<typename T>
         struct filled_array_helper_t {
@@ -227,34 +224,34 @@ namespace iro {
 
     class effect_string;
 
-    class persist {
-        unsigned location_in_stack_;            // 0 is a special value that indicates a persist with no active effects
+    class terminal_state_guard {
+        unsigned location_in_stack_;            // 0 is a special value that indicates a state guard with no active effects
         std::ostream* stream_ = nullptr;        // 0 is always available because index 0 (the first element in the stack) is always the default effect set
 
-        static constexpr unsigned empty_persist_location = 0;
+        static constexpr unsigned empty_state_guard_location = 0;
 
-        friend persist   operator<<(std::ostream&, const effect_string&);
-        friend persist&& operator<<(persist&,      const effect_string&);
+        friend terminal_state_guard   operator<<(std::ostream&, const effect_string&);
+        friend terminal_state_guard&& operator<<(terminal_state_guard&, const effect_string&);
 
     public:
-        persist() = delete;
+        terminal_state_guard() = delete;
 
-        persist(std::ostream& os);
+        terminal_state_guard(std::ostream& os);
 
-        persist(std::ostream& os, const effect& e);
-        persist(std::ostream& os, const effect_set& e);
+        terminal_state_guard(std::ostream& os, const effect& e);
+        terminal_state_guard(std::ostream& os, const effect_set& e);
 
-        persist(persist&& other) noexcept;
-        persist& operator=(persist&& rhs) noexcept;
+        terminal_state_guard           (terminal_state_guard&& other) noexcept;
+        terminal_state_guard& operator=(terminal_state_guard&& rhs  ) noexcept;
 
-        persist(const persist& other);
-        persist& operator=(const persist& rhs);
+        terminal_state_guard           (const terminal_state_guard& other);
+        terminal_state_guard& operator=(const terminal_state_guard& rhs);
 
-        persist&& operator<<(const effect& e);
-        persist&& operator<<(const effect_set& es);
+        terminal_state_guard&& operator<<(const effect& e);
+        terminal_state_guard&& operator<<(const effect_set& es);
 
         template<typename T, std::enable_if_t<(!std::is_same<T, effect>::value) && (!std::is_same<T, effect_set>::value), bool> = true>
-        persist&& operator<<(const T& arg) {
+        terminal_state_guard&& operator<<(const T& arg) {
             *stream_ << arg;
             return std::move(*this);
         }
@@ -267,11 +264,11 @@ namespace iro {
 
         void delete_early();
 
-        ~persist();
+        ~terminal_state_guard();
     };
 
-    persist operator<<(std::ostream& stream, const effect& e);
-    persist operator<<(std::ostream& stream, const effect_set& e);
+    terminal_state_guard operator<<(std::ostream& stream, const effect& e);
+    terminal_state_guard operator<<(std::ostream& stream, const effect_set& e);
 
 
     class effect_string {
@@ -296,13 +293,14 @@ namespace iro {
             init_(stream, args...);
         }
 
-        friend persist   operator<<(std::ostream&, const effect_string&);
-        friend persist&& operator<<(persist&,      const effect_string&);
+        friend terminal_state_guard   operator<<(std::ostream&, const effect_string&);
+        friend terminal_state_guard&& operator<<(terminal_state_guard&, const effect_string&);
 
         string_and_effects& back_();
         const string_and_effects& back_() const;
 
     public:
+        /// concatenates arg and args... and applies effects to the resulting string
         template<typename T, typename...Ts>
         effect_string(const effect_set& effects, const T& arg, const Ts&...args) {
             std::stringstream stream; // probably really slow
@@ -364,23 +362,32 @@ namespace iro {
         /**
          * Returns an std::string with the correct escape codes embedded
          *
-         * This function is unsafe because the conversion to an std::string embeds escape codes directly as character data.
-         * This means that the escape codes to undo the effects are
-         *
-         * You need to make absolutely sure that you don't modify any iro state between the call to unsafe_string and the resultant string being printed to the given stream
-         * And (obviously), don't print the returned string to a stream othere than the one you said you were going to print it to
+         * This function is unsafe because the conversion to an std::string embeds escape codes directly as character data, so it loses all knowledge of what effects are applied to the terminal
+         * This means you need to make absolutely sure that you don't modify any iro state between the call to unsafe_string and the resultant string being printed to the given stream
+         * And (obviously), don't print the returned string to a stream other than the one you said you were going to print it to
          *
          * You should really only use this function if you need to interface with a different printing library
          *
-         * @param stream the stream you will eventually print this string to
+         * @param stream the stream you will eventually print this string to (THIS IS A PROMISE! DO NOT BREAK IT!)
          */
         std::string unsafe_string(const std::ostream& stream) const;
     };
 
-    persist   operator<<(std::ostream& os, const effect_string& es);
-    persist&& operator<<(persist& p,       const effect_string& es);
+    /// does the exact same thing as the constructor of effect_string. Just has a nicer name
+    template<typename T, typename...Ts>
+    effect_string imbue(const effect_set& effects, const T& arg, const Ts&...args) {
+        return {effects, arg, args...};
+    }
 
-    #ifdef IRO_IMPL
+    terminal_state_guard   operator<<(std::ostream& os, const effect_string& es);
+    terminal_state_guard&& operator<<(terminal_state_guard& p, const effect_string& es);
+}
+
+#ifdef IRO_IMPL
+    #include <cassert>
+    #include <unordered_map>
+
+    namespace iro {
         effect::effect(const char* code, effect_type type) noexcept : code_(code), type_(type) {}
         
         ///  effects  ///
@@ -533,19 +540,19 @@ namespace iro {
         }
 
 
-        persist::persist(std::ostream& os) : stream_(&os) {
-            location_in_stack_ = detail::push_empty_persist(stream_);
+        terminal_state_guard::terminal_state_guard(std::ostream& os) : stream_(&os) {
+            location_in_stack_ = detail::push_empty_state_guard(stream_);
         }
 
-        persist::persist(std::ostream& os, const effect& e) : stream_(&os) {
-            location_in_stack_ = detail::push_persist(stream_, e.type_, e.code_);
+        terminal_state_guard::terminal_state_guard(std::ostream& os, const effect& e) : stream_(&os) {
+            location_in_stack_ = detail::push_state_guard(stream_, e.type_, e.code_);
         }
 
-        persist::persist(std::ostream& os, const effect_set& e) : stream_(&os) {
-            location_in_stack_ = detail::push_persist(stream_, e);
+        terminal_state_guard::terminal_state_guard(std::ostream& os, const effect_set& e) : stream_(&os) {
+            location_in_stack_ = detail::push_state_guard(stream_, e);
         }
 
-        persist::persist(persist&& other) noexcept {
+        terminal_state_guard::terminal_state_guard(terminal_state_guard&& other) noexcept {
             stream_ = other.stream_;
             other.stream_ = nullptr;
 
@@ -553,65 +560,65 @@ namespace iro {
             other.location_in_stack_ = 0;
         }
 
-        persist& persist::operator=(persist&& rhs) noexcept {
+        terminal_state_guard& terminal_state_guard::operator=(terminal_state_guard&& rhs) noexcept {
             std::swap(stream_, rhs.stream_);
             std::swap(location_in_stack_, rhs.location_in_stack_);
 
             return *this;
         }
 
-        persist::persist(const persist& other) : stream_(other.stream_),
-                                                 location_in_stack_(detail::copy_persist(other.stream_, other.location_in_stack_)) {}
+        terminal_state_guard::terminal_state_guard(const terminal_state_guard& other) : stream_(other.stream_),
+                                                                                        location_in_stack_(detail::copy_state_guard(other.stream_, other.location_in_stack_)) {}
 
-        persist& persist::operator=(const persist& rhs) {
-            return (*this = persist(rhs));
+        terminal_state_guard& terminal_state_guard::operator=(const terminal_state_guard& rhs) {
+            return (*this = terminal_state_guard(rhs));
         }
 
-        persist&& persist::operator<<(const effect& e) {
+        terminal_state_guard&& terminal_state_guard::operator<<(const effect& e) {
             detail::set(stream_, location_in_stack_, e.type_, e.code_);
 
             return std::move(*this);
         }
 
-        persist&& persist::operator<<(const effect_set& es) {
+        terminal_state_guard&& terminal_state_guard::operator<<(const effect_set& es) {
             detail::set(stream_, location_in_stack_, es);
 
             return std::move(*this);
         }
 
-        persist operator<<(std::ostream& stream, const effect& e) {
+        terminal_state_guard operator<<(std::ostream& stream, const effect& e) {
             return {stream, e};
         }
 
-        persist operator<<(std::ostream& stream, const effect_set& e) {
+        terminal_state_guard operator<<(std::ostream& stream, const effect_set& e) {
             return {stream, e};
         }
 
-        std::ostream& persist::ostream() {
+        std::ostream& terminal_state_guard::ostream() {
             return *stream_;
         }
 
-        const std::ostream& persist::ostream() const {
+        const std::ostream& terminal_state_guard::ostream() const {
             return *stream_;
         }
 
-        persist::operator std::ostream&() {
+        terminal_state_guard::operator std::ostream&() {
             return *stream_;
         }
 
-        persist::operator const std::ostream&() const {
+        terminal_state_guard::operator const std::ostream&() const {
             return *stream_;
         }
 
-        void persist::delete_early() {
-            if(location_in_stack_ != empty_persist_location) {
-                detail::delete_persist(stream_, location_in_stack_);
+        void terminal_state_guard::delete_early() {
+            if(location_in_stack_ != empty_state_guard_location) {
+                detail::delete_state_guard(stream_, location_in_stack_);
             }
-            location_in_stack_ = empty_persist_location;
+            location_in_stack_ = empty_state_guard_location;
         }
 
 
-        persist::~persist() {
+        terminal_state_guard::~terminal_state_guard() {
             delete_early();
         }
 
@@ -676,12 +683,12 @@ namespace iro {
             return ret;
         }
 
-        persist&& operator<<(persist& p, const effect_string& es) {
+        terminal_state_guard&& operator<<(terminal_state_guard& p, const effect_string& es) {
             return p << es.unsafe_string(*p.stream_);
         }
 
-        persist operator<<(std::ostream& os, const effect_string& es) {
-            persist ret(os);
+        terminal_state_guard operator<<(std::ostream& os, const effect_string& es) {
+            terminal_state_guard ret(os);
 
             ret << es;
 
@@ -775,14 +782,14 @@ namespace iro {
             static std::ostream* streams_[] = {&std::cout, &std::cerr};
 
             // returns location in map
-            unsigned push_persist(std::ostream* stream, effect_type type, const char* code) {
-                auto ret = push_empty_persist(stream);
+            unsigned push_state_guard(std::ostream* stream, effect_type type, const char* code) {
+                auto ret = push_empty_state_guard(stream);
                 set_top(stream, type, code);
 
                 return ret;
             }
 
-            unsigned push_empty_persist(std::ostream* stream) {
+            unsigned push_empty_state_guard(std::ostream* stream) {
                 if(!stream_to_stack_.count(stream)) { // I'm using c++14, so .contains() isn't available :(
                     stream_to_stack_[stream].push_back({effect_type_to_default_code_});
                 }
@@ -793,8 +800,8 @@ namespace iro {
                 return ret;
             }
 
-            unsigned push_persist(std::ostream* stream, const effect_set& effects) {
-                auto ret = push_empty_persist(stream);
+            unsigned push_state_guard(std::ostream* stream, const effect_set& effects) {
+                auto ret = push_empty_state_guard(stream);
                 for(unsigned i = 0; i < number_of_effect_types; ++i) {
                     if(effects.type_to_code_[i]) {
                         set_top(stream, static_cast<effect_type>(i), effects.type_to_code_[i]);
@@ -804,12 +811,12 @@ namespace iro {
                 return ret;
             }
 
-            unsigned copy_persist(std::ostream* stream, unsigned index_in_stack) {
+            unsigned copy_state_guard(std::ostream* stream, unsigned index_in_stack) {
                 auto& stack = stream_to_stack_.at(stream);
-                return push_persist(stream, {stack[index_in_stack].type_to_code}); // push calls set, which takes care of setting is_empty, so we don't have to copy it from the old persist's entry manually
+                return push_state_guard(stream, {stack[index_in_stack].type_to_code}); // push calls set, which takes care of setting is_empty, so we don't have to copy it from the old state guard's entry manually
             }
 
-            void delete_persist(std::ostream* stream, unsigned index_in_stack) {
+            void delete_state_guard(std::ostream* stream, unsigned index_in_stack) {
                 auto& stack = stream_to_stack_.at(stream);
 
                 stack[index_in_stack].is_destructed = true;
@@ -817,8 +824,8 @@ namespace iro {
                 if(index_in_stack == stack.size()-1) {
                     unsigned i = stack.size();
 
-                    while((i > 0) && (stack[i-1].is_destructed)) { // pop all already-destructed persists
-                        stack.pop_back();                          // note that we can't pop empty (default constructed) persists, because they're still valid and could be assigned to at any time
+                    while((i > 0) && (stack[i-1].is_destructed)) { // pop all already-destructed state guards
+                        stack.pop_back();                          // note that we can't pop empty (default constructed) state guards, because they're still valid and could be assigned to at any time
 
                         --i;
                     }
@@ -867,14 +874,14 @@ namespace iro {
 
             void set(std::ostream* stream, unsigned index, const effect_set& effects) {
                 for(unsigned i = 0; i < effects.type_to_code_.size(); ++i) {
-                    if(effects.type_to_code_[i]) { // TODO: In order to have this work with persist assignment operators, you'll have to change this so that when the code is empty,
-                                                   // it cleans up the old persists state. This will involve walking down the stack and finding the last non-empty code for the given effect type
+                    if(effects.type_to_code_[i]) { // TODO: In order to have this work with state guard assignment operators, you'll have to change this so that when the code is empty,
+                                                   // it cleans up the old state guard's state. This will involve walking down the stack and finding the last non-empty code for the given effect type
                         set(stream, index, static_cast<effect_type>(i), effects.type_to_code_[i]);
                     }
                 }
             }
 
-            bool persist_has_effect_of_type(std::ostream* stream, unsigned index, effect_type type) {
+            bool state_guard_has_effect_of_type(std::ostream* stream, unsigned index, effect_type type) {
                 return stream_to_stack_.at(stream)[index].type_to_code[type];
             }
 
@@ -902,5 +909,8 @@ namespace iro {
                 *stream << get_top_code(stream, type);
             }
         }
-    #endif
-}
+    }
+#endif // #ifdef IRO_IMPL
+
+#undef IRO_WINDOWS
+#undef IRO_UNIX
