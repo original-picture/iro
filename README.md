@@ -41,7 +41,7 @@ And this is what that code outputs (using windows terminal):
 ![](basic_example_output.png)
 
 ## Build
-It's a header-only library, so just put `#define IRO_IMPL` before `#include "iro.h"` in *one* .cpp file, and then include it normally everywhere else
+It's a header-only library, so just put `#define IRO_IMPL` before `#include "iro.h"` in *one* .cpp file, and then include iro.h normally everywhere else
 ```cpp
 #define IRO_IMPL // only do this in ONE .cpp file! And it has to be BEFORE #include "iro.h"
 #include "iro.h"
