@@ -4,7 +4,7 @@ Its defining feature is that it uses [RAII](https://en.wikipedia.org/wiki/Resour
 so unlike other fancy printing libraries, you don't have to remember to call some `reset()` function to return the terminal to its normal state
 
 ## Example
-This code is copy-pasted from basic_example.cpp:
+This code is copy-pasted from [basic_example.cpp](./basic_example.cpp):
 ```cpp
 #include <iostream>
 
@@ -74,7 +74,7 @@ cmake --build .
 
 ## Documentation
 TODO! (I'm working on it!)
-In the meantime, check out more_complex_example.cpp. It has lots of comments explaining what's going on
+In the meantime, check out [more_complex_example.cpp](./more_complex_example.cpp). It has lots of comments explaining what's going on
 
 ## TODO
 - [ ] proper documentation
